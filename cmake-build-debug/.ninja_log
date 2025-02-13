@@ -1,0 +1,4 @@
+# ninja log v6
+1	196	1738431354196810304	CMakeFiles/3d_fluid_simulation_car.dir/src/coloring.c.o	fc5364504eeae9f
+1	205	1738431354196810304	CMakeFiles/3d_fluid_simulation_car.dir/main.c.o	d2fca8ac151ecd76
+1	221	1738431354196810304	CMakeFiles/3d_fluid_simulation_car.dir/src/fluid_cube.c.o	fe3db0c99cce02b5
