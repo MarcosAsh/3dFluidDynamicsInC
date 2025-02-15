@@ -136,12 +136,18 @@ static void lin_solve(int b, float *x, float *x0, float a, float c, int iter, in
 }
 
 static void diffuse(int b, float *x, float *x0, float diff, float dt, int iter, int sizeX, int sizeY, int sizeZ) {
+  	printf("Diffuse: Starting diffusion\n"); // Debug print
+
     float a = dt * diff * (sizeX - 2) * (sizeY - 2) * (sizeZ - 2);
     lin_solve(b, x, x0, a, 1 + 6 * a, iter, sizeX, sizeY, sizeZ);
+
+    printf("Diffuse: Ending diffusion\n"); // Debug print
 }
 
 static void project(float *velocX, float *velocY, float *velocZ, float *p, float *div, int iter, int sizeX, int sizeY, int sizeZ) {
-    // Calculate divergence
+  printf("Project: Starting project\n"); // Debug print
+
+  // Calculate divergence
     for (int i = 1; i < sizeX - 1; i++) {
         for (int j = 1; j < sizeY - 1; j++) {
             for (int k = 1; k < sizeZ - 1; k++) {
@@ -177,10 +183,14 @@ static void project(float *velocX, float *velocY, float *velocZ, float *p, float
     set_bnd(1, velocX, sizeX, sizeY, sizeZ);
     set_bnd(2, velocY, sizeX, sizeY, sizeZ);
     set_bnd(3, velocZ, sizeX, sizeY, sizeZ);
+
+     printf("Project: Ending project\n"); // Debug print
 }
 
 static void advect(int b, float *d, float *d0, float *velocX, float *velocY, float *velocZ, float dt, int sizeX, int sizeY, int sizeZ) {
-    float i0, i1, j0, j1, k0, k1;
+    printf("Advect: Staring advection."); // Debug print
+
+  	float i0, i1, j0, j1, k0, k1;
 
     float dtx = dt * (sizeX - 2);
     float dty = dt * (sizeY - 2);
@@ -232,6 +242,14 @@ static void advect(int b, float *d, float *d0, float *velocX, float *velocY, flo
                 int k0i = k0;
                 int k1i = k1;
 
+				// Ensure indices are within bounds
+                if (i0i < 0 || i0i >= sizeX || i1i < 0 || i1i >= sizeX ||
+                    j0i < 0 || j0i >= sizeY || j1i < 0 || j1i >= sizeY ||
+                    i0i < 0 || k0i >= sizeZ || k1i < 0 || k1i >= sizeZ ){
+                  	printf("Error: Invalid indices in advect (%d, %d, %d, %d).\n", i0i, k0i, k0i); // Debug print
+                    continue;
+                  }
+
                 d[IX3D(i, j, k, sizeX, sizeY)] =
                     s0 * (t0 * (u0 * d0[IX3D(i0i, j0i, k0i, sizeX, sizeY)] + u1 * d0[IX3D(i0i, j0i, k1i, sizeX, sizeY)]) +
                           t1 * (u0 * d0[IX3D(i0i, j1i, k0i, sizeX, sizeY)] + u1 * d0[IX3D(i0i, j1i, k1i, sizeX, sizeY)])) +
@@ -242,9 +260,11 @@ static void advect(int b, float *d, float *d0, float *velocX, float *velocY, flo
     }
 
     set_bnd(b, d, sizeX, sizeY, sizeZ);
+    printf("Advect: Advection completed.\n");
 }
 
 void FluidCubeStep(FluidCube *cube) {
+  printf("FluidCubeSte: Starting simulation step.\n"); // Debug print
     int sizeX = cube->sizeX;
     int sizeY = cube->sizeY;
     int sizeZ = cube->sizeZ;
@@ -258,22 +278,28 @@ void FluidCubeStep(FluidCube *cube) {
     float *div = cube->density; // Divergence array (reusing density array)
 
     // Diffuse velocity fields
+    printf("Diffusing velocity fields..."); // Debug print
     diffuse(1, Vx0, Vx, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
     diffuse(2, Vy0, Vy, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
     diffuse(3, Vz0, Vz, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
 
     // Project velocity fields to enforce incompressibility
+    printf("Projecting velocity fields...\n"); // Debug print
     project(Vx0, Vy0, Vz0, p, div, 4, sizeX, sizeY, sizeZ);
 
     // Advect velocity fields
+    printf("Advecting velocity fields...\n"); // Debug print
     advect(1, Vx, Vx0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
     advect(2, Vy, Vy0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
     advect(3, Vz, Vz0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
 
     // Project velocity fields again
+    printf("Projecting velocity fields...\n"); // Debug print
     project(Vx, Vy, Vz, p, div, 4, sizeX, sizeY, sizeZ);
 
     // Diffuse and advect density
+    printf("Advecting velocity fields...\n"); // Debug print
     diffuse(0, cube->s, cube->density, cube->diff, cube->dt, 4, sizeX, sizeY, sizeZ);
     advect(0, cube->density, cube->s, Vx, Vy, Vz, cube->dt, sizeX, sizeY, sizeZ);
+    printf("FluidCubeStep: Simulaation step completed.\n");
 }
