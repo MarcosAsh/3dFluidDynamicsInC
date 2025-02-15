@@ -2,14 +2,18 @@
 #include "../lib/coloring.h"
 
 void SDL_ExitWithError(const char *message) {
-    printf("Error : %s > %s \n", message, SDL_GetError());
+    printf("Error: %s > %s\n", message, SDL_GetError());
     SDL_Quit();
     exit(EXIT_FAILURE);
 }
 
 FluidCube *FluidCubeCreate(int sizeX, int sizeY, int sizeZ, float diffusion, float viscosity, float dt) {
-    printf("Creating fluid cube with size: %dx%dx%d\n", sizeX, sizeY, sizeZ); // Debug print
+    printf("Creating fluid cube with size: %dx%dx%d\n", sizeX, sizeY, sizeZ);
     FluidCube *cube = malloc(sizeof(*cube));
+    if (cube == NULL) {
+      printf("Out of memory!\n"); // Debug print
+      return NULL;
+    }
     int N = sizeX * sizeY * sizeZ;
 
     cube->sizeX = sizeX;
@@ -30,6 +34,12 @@ FluidCube *FluidCubeCreate(int sizeX, int sizeY, int sizeZ, float diffusion, flo
     cube->Vy0 = calloc(N, sizeof(float));
     cube->Vz0 = calloc(N, sizeof(float));
 
+    if ( cube->s == NULL || cube->density == NULL || cube->Vx == NULL || cube->Vy == NULL || cube->Vz == NULL || cube->Vx0 == NULL || cube->Vy0 == NULL || cube->Vz0 == NULL) {
+      printf("Out of memory!\n"); // Debug print
+      FluidCubeFree(cube);
+      return NULL;
+    }
+    printf("Fluid cube memory allocated successfully.\n");
     return cube;
 }
 
@@ -49,19 +59,30 @@ void FluidCubeFree(FluidCube *cube) {
 }
 
 void FluidCubeAddDensity(FluidCube *cube, int x, int y, int z, float amount) {
-    cube->density[IX3D(x, y, z, cube->sizeX, cube->sizeY)] += amount;
+  	if (x < 0 || x >= cube->sizeX || y < 0 || y >= cube->sizeY || z < 0 || z >= cube->sizeZ) {
+          printf("Error: Invalid indices in FluidAddDensity (%d, %d, %d)\n", x, y, z); // Debug print
+          return;
+  	}
+  	int index = IX3D(x, y, z, cube->sizeX, cube->sizeY);
+   	cube->density[IX3D(x, y, z, cube->sizeX, cube->sizeY)] += amount;
+    printf("FluidCubeAddDensity: Added denstiy=%f at (%d, %d, %d)\n", amount, x, y, z);	// Debug print
 }
 
 void FluidCubeAddVelocity(FluidCube *cube, int x, int y, int z, float amtX, float amtY, float amtZ) {
+    if (x < 0 || x >= cube->sizeX || y < 0 || y >= cube->sizeY || z < 0 || z >= cube->sizeZ) {
+      printf("Error: Invalid indices in FluidAddVelocity (%d, %d, %d)\n", x, y, z);
+      return;
+	}
     int index = IX3D(x, y, z, cube->sizeX, cube->sizeY);
     cube->Vx[index] += amtX;
     cube->Vy[index] += amtY;
     cube->Vz[index] += amtZ;
+    printf("FluidCubeAddVelocity: Added velocity=(%f, %f, %f) at (%d, %d, %d)\n", amtX, amtY, amtZ, x, y, z); // Debug print
+
 }
 
 static void set_bnd(int b, float *x, int sizeX, int sizeY, int sizeZ) {
     // Implement boundary conditions for 3D
-    // This is a simplified version and may need to be expanded
     for (int i = 1; i < sizeX - 1; i++) {
         for (int j = 1; j < sizeY - 1; j++) {
             x[IX3D(i, j, 0, sizeX, sizeY)] = b == 3 ? -x[IX3D(i, j, 1, sizeX, sizeY)] : x[IX3D(i, j, 1, sizeX, sizeY)];
