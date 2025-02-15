@@ -1,5 +1,7 @@
 #include "./lib/fluid_cube.h"
 #include "./lib/coloring.h"
+#include "./obj-file-loader/lib/model_loader.h"
+#include "./obj-file-loader/lib/render_model.h"
 #include <time.h>
 
 const int WIDTH = 500;
@@ -30,6 +32,16 @@ int main(int argc, char* argv[]) {
     }
 
     printf("SDL window and renderer initialized.\n");
+
+    // Load the 3D model (e.g., a car)
+    Model carModel = loadOBJ("car_model.obj");
+    if (carModel.vertexCount == 0) {
+        printf("Failed to load car model.\n");
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
 
     int running = 1;
     int holdingClick = 0;
@@ -110,9 +122,11 @@ int main(int argc, char* argv[]) {
             printf("Simulation stepped.\n");
         }
 
+        // Clear the screen
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        // Render the fluid simulation
         for (int i = 0; i < fluid->sizeX; i++) {
             for (int j = 0; j < fluid->sizeY; j++) {
                 for (int k = 0; k < fluid->sizeZ; k++) {
@@ -142,9 +156,15 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // Render the 3D car model
+        renderModel(renderer, &carModel, SCALE);
+
+        // Present the rendered frame
         SDL_RenderPresent(renderer);
     }
 
+    // Cleanup
+    freeModel(&carModel);
     FluidCubeFree(fluid);
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);

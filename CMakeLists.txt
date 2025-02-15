@@ -8,4 +8,8 @@ add_executable(3d_fluid_simulation_car main.c
         lib/coloring.h
         src/coloring.c
         src/fluid_cube.c
+        obj-file-loader/lib/model_loader.h
+        obj-file-loader/src/model_laoder.c
+        obj-file-loader/src/render_model.c
+        obj-file-loader/lib/render_model.h
 )
