@@ -1,5 +1,7 @@
 #include "../lib/fluid_cube.h"
 #include "../lib/coloring.h"
+#include "../obj-file-loader/lib/model_loader.h"
+#include "../obj-file-loader/lib/render_model.h"
 
 void SDL_ExitWithError(const char *message) {
     printf("Error: %s > %s\n", message, SDL_GetError());
@@ -7,13 +9,14 @@ void SDL_ExitWithError(const char *message) {
     exit(EXIT_FAILURE);
 }
 
-FluidCube *FluidCubeCreate(int sizeX, int sizeY, int sizeZ, float diffusion, float viscosity, float dt) {
+FluidCube *FluidCubeCreate(int sizeX, int sizeY, int sizeZ, float diffusion, float viscosity, float dt, Model* model) {
     printf("Creating fluid cube with size: %dx%dx%d\n", sizeX, sizeY, sizeZ);
     FluidCube *cube = malloc(sizeof(*cube));
     if (cube == NULL) {
-      printf("Out of memory!\n"); // Debug print
-      return NULL;
+        printf("Out of memory!\n");
+        return NULL;
     }
+
     int N = sizeX * sizeY * sizeZ;
 
     cube->sizeX = sizeX;
@@ -22,23 +25,24 @@ FluidCube *FluidCubeCreate(int sizeX, int sizeY, int sizeZ, float diffusion, flo
     cube->dt = dt;
     cube->diff = diffusion;
     cube->visc = viscosity;
+    cube->model = model; // Store the model pointer
 
+    // Allocate memory for arrays...
     cube->s = calloc(N, sizeof(float));
     cube->density = calloc(N, sizeof(float));
-
     cube->Vx = calloc(N, sizeof(float));
     cube->Vy = calloc(N, sizeof(float));
     cube->Vz = calloc(N, sizeof(float));
-
     cube->Vx0 = calloc(N, sizeof(float));
     cube->Vy0 = calloc(N, sizeof(float));
     cube->Vz0 = calloc(N, sizeof(float));
 
-    if ( cube->s == NULL || cube->density == NULL || cube->Vx == NULL || cube->Vy == NULL || cube->Vz == NULL || cube->Vx0 == NULL || cube->Vy0 == NULL || cube->Vz0 == NULL) {
-      printf("Out of memory!\n"); // Debug print
-      FluidCubeFree(cube);
-      return NULL;
+    if (cube->s == NULL || cube->density == NULL || cube->Vx == NULL || cube->Vy == NULL || cube->Vz == NULL || cube->Vx0 == NULL || cube->Vy0 == NULL || cube->Vz0 == NULL) {
+        printf("Out of memory!\n");
+        FluidCubeFree(cube);
+        return NULL;
     }
+
     printf("Fluid cube memory allocated successfully.\n");
     return cube;
 }
@@ -81,7 +85,7 @@ void FluidCubeAddVelocity(FluidCube *cube, int x, int y, int z, float amtX, floa
 
 }
 
-static void set_bnd(int b, float *x, int sizeX, int sizeY, int sizeZ) {
+static void set_bnd(int b, float *x, int sizeX, int sizeY, int sizeZ, FluidCube *cube) {
     // Implement boundary conditions for 3D
     for (int i = 1; i < sizeX - 1; i++) {
         for (int j = 1; j < sizeY - 1; j++) {
@@ -113,9 +117,22 @@ static void set_bnd(int b, float *x, int sizeX, int sizeY, int sizeZ) {
     x[IX3D(0, sizeY - 1, sizeZ - 1, sizeX, sizeY)] = 0.5f * (x[IX3D(1, sizeY - 1, sizeZ - 1, sizeX, sizeY)] + x[IX3D(0, sizeY - 2, sizeZ - 1, sizeX, sizeY)] + x[IX3D(0, sizeY - 1, sizeZ - 2, sizeX, sizeY)]);
     x[IX3D(sizeX - 1, 0, sizeZ - 1, sizeX, sizeY)] = 0.5f * (x[IX3D(sizeX - 2, 0, sizeZ - 1, sizeX, sizeY)] + x[IX3D(sizeX - 1, 1, sizeZ - 1, sizeX, sizeY)] + x[IX3D(sizeX - 1, 0, sizeZ - 2, sizeX, sizeY)]);
     x[IX3D(sizeX - 1, sizeY - 1, sizeZ - 1, sizeX, sizeY)] = 0.5f * (x[IX3D(sizeX - 2, sizeY - 1, sizeZ - 1, sizeX, sizeY)] + x[IX3D(sizeX - 1, sizeY - 2, sizeZ - 1, sizeX, sizeY)] + x[IX3D(sizeX - 1, sizeY - 1, sizeZ - 2, sizeX, sizeY)]);
+
+   // Add boundary conditions for the car model
+    if (cube->model) { // Check if the model exists
+        for (int i = 0; i < sizeX; i++) {
+            for (int j = 0; j < sizeY; j++) {
+                for (int k = 0; k < sizeZ; k++) {
+                    if (isInsideCarModel(i, j, k, cube->model, sizeX, sizeY, sizeZ)) {
+                        x[IX3D(i, j, k, sizeX, sizeY)] = 0; // Set velocity/density to zero inside the car model
+                    }
+                }
+            }
+        }
+    }
 }
 
-static void lin_solve(int b, float *x, float *x0, float a, float c, int iter, int sizeX, int sizeY, int sizeZ) {
+static void lin_solve(int b, float *x, float *x0, float a, float c, int iter, int sizeX, int sizeY, int sizeZ, FluidCube *cube) {
     float cRecip = 1.0 / c;
     for (int k = 0; k < iter; k++) {
         for (int i = 1; i < sizeX - 1; i++) {
@@ -131,20 +148,21 @@ static void lin_solve(int b, float *x, float *x0, float a, float c, int iter, in
                 }
             }
         }
-        set_bnd(b, x, sizeX, sizeY, sizeZ);
+        set_bnd(b, x, sizeX, sizeY, sizeZ, cube);
     }
 }
 
-static void diffuse(int b, float *x, float *x0, float diff, float dt, int iter, int sizeX, int sizeY, int sizeZ) {
+static void diffuse(int b, float *x, float *x0, float diff, float dt, int iter, int sizeX, int sizeY, int sizeZ, FluidCube *cube) {
   	printf("Diffuse: Starting diffusion\n"); // Debug print
 
     float a = dt * diff * (sizeX - 2) * (sizeY - 2) * (sizeZ - 2);
-    lin_solve(b, x, x0, a, 1 + 6 * a, iter, sizeX, sizeY, sizeZ);
+    lin_solve(b, x, x0, a, 1 + 6 * a, iter, sizeX, sizeY, sizeZ, cube);
+    set_bnd(b, x, sizeX, sizeY, sizeZ, cube);
 
     printf("Diffuse: Ending diffusion\n"); // Debug print
 }
 
-static void project(float *velocX, float *velocY, float *velocZ, float *p, float *div, int iter, int sizeX, int sizeY, int sizeZ) {
+static void project(float *velocX, float *velocY, float *velocZ, float *p, float *div, int iter, int sizeX, int sizeY, int sizeZ, FluidCube *cube) {
   printf("Project: Starting project\n"); // Debug print
 
   // Calculate divergence
@@ -162,11 +180,11 @@ static void project(float *velocX, float *velocY, float *velocZ, float *p, float
     }
 
     // Set boundary conditions for divergence and pressure
-    set_bnd(0, div, sizeX, sizeY, sizeZ);
-    set_bnd(0, p, sizeX, sizeY, sizeZ);
+    set_bnd(0, div, sizeX, sizeY, sizeZ, cube);
+    set_bnd(0, p, sizeX, sizeY, sizeZ, cube);
 
     // Solve for pressure
-    lin_solve(0, p, div, 1, 6, iter, sizeX, sizeY, sizeZ);
+    lin_solve(0, p, div, 1, 6, iter, sizeX, sizeY, sizeZ, cube);
 
     // Update velocity fields based on pressure
     for (int i = 1; i < sizeX - 1; i++) {
@@ -180,14 +198,14 @@ static void project(float *velocX, float *velocY, float *velocZ, float *p, float
     }
 
     // Set boundary conditions for velocity fields
-    set_bnd(1, velocX, sizeX, sizeY, sizeZ);
-    set_bnd(2, velocY, sizeX, sizeY, sizeZ);
-    set_bnd(3, velocZ, sizeX, sizeY, sizeZ);
+    set_bnd(1, velocX, sizeX, sizeY, sizeZ, cube);
+    set_bnd(2, velocY, sizeX, sizeY, sizeZ, cube);
+    set_bnd(3, velocZ, sizeX, sizeY, sizeZ, cube);
 
      printf("Project: Ending project\n"); // Debug print
 }
 
-static void advect(int b, float *d, float *d0, float *velocX, float *velocY, float *velocZ, float dt, int sizeX, int sizeY, int sizeZ) {
+static void advect(int b, float *d, float *d0, float *velocX, float *velocY, float *velocZ, float dt, int sizeX, int sizeY, int sizeZ, FluidCube *cube) {
     printf("Advect: Staring advection."); // Debug print
 
   	float i0, i1, j0, j1, k0, k1;
@@ -259,12 +277,11 @@ static void advect(int b, float *d, float *d0, float *velocX, float *velocY, flo
         }
     }
 
-    set_bnd(b, d, sizeX, sizeY, sizeZ);
+    set_bnd(b, d, sizeX, sizeY, sizeZ, cube);
     printf("Advect: Advection completed.\n");
 }
 
 void FluidCubeStep(FluidCube *cube) {
-  printf("FluidCubeSte: Starting simulation step.\n"); // Debug print
     int sizeX = cube->sizeX;
     int sizeY = cube->sizeY;
     int sizeZ = cube->sizeZ;
@@ -278,28 +295,22 @@ void FluidCubeStep(FluidCube *cube) {
     float *div = cube->density; // Divergence array (reusing density array)
 
     // Diffuse velocity fields
-    printf("Diffusing velocity fields..."); // Debug print
-    diffuse(1, Vx0, Vx, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
-    diffuse(2, Vy0, Vy, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
-    diffuse(3, Vz0, Vz, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ);
+    diffuse(1, Vx0, Vx, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ, cube);
+    diffuse(2, Vy0, Vy, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ, cube);
+    diffuse(3, Vz0, Vz, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ, cube);
 
     // Project velocity fields to enforce incompressibility
-    printf("Projecting velocity fields...\n"); // Debug print
-    project(Vx0, Vy0, Vz0, p, div, 4, sizeX, sizeY, sizeZ);
+    project(Vx0, Vy0, Vz0, p, div, 4, sizeX, sizeY, sizeZ, cube);
 
     // Advect velocity fields
-    printf("Advecting velocity fields...\n"); // Debug print
-    advect(1, Vx, Vx0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
-    advect(2, Vy, Vy0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
-    advect(3, Vz, Vz0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ);
+    advect(1, Vx, Vx0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ, cube);
+    advect(2, Vy, Vy0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ, cube);
+    advect(3, Vz, Vz0, Vx0, Vy0, Vz0, cube->dt, sizeX, sizeY, sizeZ, cube);
 
     // Project velocity fields again
-    printf("Projecting velocity fields...\n"); // Debug print
-    project(Vx, Vy, Vz, p, div, 4, sizeX, sizeY, sizeZ);
+    project(Vx, Vy, Vz, p, div, 4, sizeX, sizeY, sizeZ, cube);
 
     // Diffuse and advect density
-    printf("Advecting velocity fields...\n"); // Debug print
-    diffuse(0, cube->s, cube->density, cube->diff, cube->dt, 4, sizeX, sizeY, sizeZ);
-    advect(0, cube->density, cube->s, Vx, Vy, Vz, cube->dt, sizeX, sizeY, sizeZ);
-    printf("FluidCubeStep: Simulaation step completed.\n");
+    diffuse(0, cube->s, cube->density, cube->diff, cube->dt, 4, sizeX, sizeY, sizeZ, cube);
+    advect(0, cube->density, cube->s, Vx, Vy, Vz, cube->dt, sizeX, sizeY, sizeZ, cube);
 }

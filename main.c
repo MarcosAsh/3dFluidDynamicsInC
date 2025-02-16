@@ -54,7 +54,8 @@ int main(int argc, char* argv[]) {
 
     srand(time(NULL)); // Seed the random number generator
 
-    FluidCube *fluid = FluidCubeCreate(WIDTH / SCALE, HEIGHT / SCALE, DEPTH / SCALE, 0.001f, 0.0f, 0.001f);
+    // Create the fluid cube and pass the car model
+    FluidCube *fluid = FluidCubeCreate(WIDTH / SCALE, HEIGHT / SCALE, DEPTH / SCALE, 0.001f, 0.0f, 0.001f, &carModel);
     if (fluid == NULL) {
         SDL_ExitWithError("Could not create fluid cube");
     }
