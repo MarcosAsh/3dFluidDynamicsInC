@@ -264,7 +264,7 @@ static void advect(int b, float *d, float *d0, float *velocX, float *velocY, flo
                 if (i0i < 0 || i0i >= sizeX || i1i < 0 || i1i >= sizeX ||
                     j0i < 0 || j0i >= sizeY || j1i < 0 || j1i >= sizeY ||
                     i0i < 0 || k0i >= sizeZ || k1i < 0 || k1i >= sizeZ ){
-                  	printf("Error: Invalid indices in advect (%d, %d, %d, %d).\n", i0i, k0i, k0i); // Debug print
+                  	printf("Error: Invalid indices in advect (%d, %d, %d).\n", i0i, k0i, k0i); // Debug print
                     continue;
                   }
 
