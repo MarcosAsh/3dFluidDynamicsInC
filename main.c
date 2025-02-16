@@ -1,16 +1,58 @@
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "./lib/fluid_cube.h"
 #include "./lib/coloring.h"
 #include "./obj-file-loader/lib/model_loader.h"
 #include "./obj-file-loader/lib/render_model.h"
 #include <time.h>
 
+// Slider variables
+int sliderX = 100;          // X position of the slider
+int sliderY = 50;           // Y position of the slider
+int sliderWidth = 200;      // Width of the slider bar
+int sliderHeight = 20;      // Height of the slider bar
+int handleWidth = 10;       // Width of the slider handle
+int handleX = sliderX;      // X position of the slider handle
+int isDragging = 0;         // Whether the handle is being dragged
+float windSpeed = 0.0f;     // Wind speed in kph (0 to 350)
+
 const int WIDTH = 500;
 const int HEIGHT = 500;
 const int DEPTH = 500;
 
+// Function to render the slider
+void renderSlider(SDL_Renderer* renderer) {
+    // Draw the slider bar
+    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255); // Gray color
+    SDL_Rect sliderRect = {sliderX, sliderY, sliderWidth, sliderHeight};
+    SDL_RenderFillRect(renderer, &sliderRect);
+
+    // Draw the slider handle
+    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255); // Light gray color
+    SDL_Rect handleRect = {handleX, sliderY, handleWidth, sliderHeight};
+    SDL_RenderFillRect(renderer, &handleRect);
+}
+
+// Function to render text
+void renderText(SDL_Renderer* renderer, TTF_Font* font, const char* text, int x, int y) {
+    SDL_Color color = {255, 255, 255, 255}; // White color
+    SDL_Surface* surface = TTF_RenderText_Solid(font, text, color);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Rect rect = {x, y, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &rect);
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+}
+
 int main(int argc, char* argv[]) {
     if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         SDL_ExitWithError("Couldn't init SDL2");
+    }
+
+    if (TTF_Init() != 0) {
+        SDL_ExitWithError("Couldn't init SDL_ttf");
     }
 
     SDL_Window* window = NULL;
@@ -29,6 +71,16 @@ int main(int argc, char* argv[]) {
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (renderer == NULL) {
         SDL_ExitWithError("Could not create renderer");
+    }
+
+    // Load a font for rendering text
+    TTF_Font* font = TTF_OpenFont("path/to/font.ttf", 24); // Replace with your font path
+    if (!font) {
+        printf("Error: Could not load font\n");
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
     }
 
     printf("SDL window and renderer initialized.\n");
@@ -69,6 +121,41 @@ int main(int argc, char* argv[]) {
                 case SDL_QUIT:
                     running = 0;
                     break;
+
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        // Check if the mouse is over the slider handle
+                        int mouseX = event.button.x;
+                        int mouseY = event.button.y;
+                        if (mouseX >= handleX && mouseX <= handleX + handleWidth &&
+                            mouseY >= sliderY && mouseY <= sliderY + sliderHeight) {
+                            isDragging = 1; // Start dragging
+                        }
+                    }
+                    break;
+
+                case SDL_MOUSEBUTTONUP:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        isDragging = 0; // Stop dragging
+                    }
+                    break;
+
+                case SDL_MOUSEMOTION:
+                    if (isDragging) {
+                        // Update the handle position based on mouse movement
+                        int mouseX = event.motion.x;
+                        handleX = mouseX - handleWidth / 2;
+
+                        // Clamp the handle position to the slider bounds
+                        if (handleX < sliderX) handleX = sliderX;
+                        if (handleX > sliderX + sliderWidth - handleWidth) handleX = sliderX + sliderWidth - handleWidth;
+
+                        // Map handle position to wind speed (0 to 350 kph)
+                        windSpeed = ((float)(handleX - sliderX) / (sliderWidth - handleWidth)) * 350.0f;
+                        printf("Wind speed: %.2f kph\n", windSpeed);
+                    }
+                    break;
+
                 case SDL_KEYDOWN:
                     if (event.key.keysym.sym == SDLK_s) {
                         mode = (mode + 1) % 3;
@@ -86,16 +173,6 @@ int main(int argc, char* argv[]) {
                         printf("Switched to mode %d\n", mode);
                     }
                     break;
-                case SDL_MOUSEBUTTONDOWN:
-                    if (event.button.button == SDL_BUTTON_LEFT) {
-                        holdingClick = 1;
-                    }
-                    break;
-                case SDL_MOUSEBUTTONUP:
-                    if (event.button.button == SDL_BUTTON_LEFT) {
-                        holdingClick = 0;
-                    }
-                    break;
             }
         }
 
@@ -110,6 +187,9 @@ int main(int argc, char* argv[]) {
             float velX = (rand() % 100) - 50;
             float velY = (rand() % 100) - 50;
             float velZ = (rand() % 100) - 50;
+
+            // Adjust velocity based on wind speed
+            velX += windSpeed / 350.0f * 10.0f; // Example: Increase X velocity based on wind speed
 
             FluidCubeAddDensity(fluid, x, y, z, density);
             FluidCubeAddVelocity(fluid, x, y, z, velX, velY, velZ);
@@ -157,6 +237,14 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // Render the slider
+        renderSlider(renderer);
+
+        // Render the wind speed text
+        char windSpeedText[32];
+        sprintf(windSpeedText, "Wind Speed: %.2f kph", windSpeed);
+        renderText(renderer, font, windSpeedText, sliderX, sliderY + sliderHeight + 10);
+
         // Render the 3D car model
         renderModel(renderer, &carModel, SCALE);
 
@@ -165,10 +253,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    TTF_CloseFont(font);
     freeModel(&carModel);
     FluidCubeFree(fluid);
-    SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
     SDL_Quit();
 
     printf("Program exited successfully.\n");
