@@ -10,8 +10,8 @@ typedef struct {
 } Face;
 
 typedef struct {
-  Vertex* vertices;
-  Face* faces;
+  Vertex* vertices; // Dynamically allocated
+  Face* faces; // Dynamically allocated
   int vertexCount;
   int faceCount;
 } Model;

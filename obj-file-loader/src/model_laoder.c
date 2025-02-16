@@ -4,51 +4,100 @@
 #include <string.h>
 #include <math.h>
 
-Model loadOBJ(const char* filepath) {
-  Model model = {0};
-  FILE* file = fopen(filepath, "r");
+int countVerticesInFile(const char* filePath) {
+  FILE* file = fopen(filePath, "r");
   if (!file) {
-    printf("Could not open file %s\n", filepath);
-    return model;
+    printf("Error: Could not open file %s\n", filePath); // Debug print
+    return 0;
   }
 
-  // Count vertices anad faces
-  char line[128];
+  int vertexCount = 0;
+  char line[256];
+
   while (fgets(line, sizeof(line), file)) {
     if (line[0] == 'v' && line[1] == ' ') {
-      model.vertexCount++;
-    } else if (line[0] == 'f' && line[1] == ' ') {
-      model.faceCount++;
+        vertexCount++;
     }
   }
+  fclose(file);
+  return vertexCount;
+}
 
-  // Allocate memory
-  model.vertices = (Vertex*)malloc(model.vertexCount * sizeof(Vertex));
-  model.faces = (Face*)malloc(model.faceCount * sizeof(Face));
+int countFacesInFile(const char* filePath) {
+  FILE* file = fopen(filePath, "r");
+  if (!file) {
+    printf("Error: could not open file %s\n", filePath); // Debug print
+    return 0;
+  }
 
-  // Read file again to extract data
-  rewind(file);
-  int vertexIndex = 0, faceIndex = 0;
-  while (fgets(line, sizeof(line), file)) {
-    if (line[0] == 'v' && line[1] == ' ') {
-      // Parse vertex
-      sscanf(line, "v %f %f %f", &model.vertices[faceIndex].x,
-                                &model.vertices[vertexIndex].y,
-                                &model.vertices[vertexIndex].z);
-    } else if (line[0] == 'f' && line[1] == ' '){
-      // Parse face (assuming triangles)
-     sscanf(line, "f %d %d %d", &model.faces[faceIndex].v1,
-                               &model.faces[vertexIndex].v2,
-                               &model.faces[vertexIndex].v3);
-     // OBJ indices start at 1, so subtract 1
-     model.faces[faceIndex].v1--;
-     model.faces[faceIndex].v2--;
-     model.faces[faceIndex].v3--;
-     faceIndex++;
+  int faceCount = 0;
+  char line[256];
+
+  while(fgets(line, sizeof(line), file)) {
+    if (line[0] == 'f' && line[1] == ' ') {
+      faceCount++;
     }
   }
 
   fclose(file);
+  return faceCount;
+}
+
+Model loadOBJ(const char* filePath) {
+  Model model = {0};
+
+  // Count vertices and faces
+  int vertexCount = countVerticesInFile(filePath);
+  int faceCount = countFacesInFile(filePath);
+
+  printf("File contains %d vertices and %d faces.\n", vertexCount, faceCount);
+
+  // Allocate memory
+  model.vertices = (Vertex*)malloc(vertexCount * sizeof(Vertex));
+  model.faces = (Face*)malloc(faceCount * sizeof(Face));
+
+  if (!model.vertices || !model.faces) {
+    printf("Error: Out of memory!\n");
+    free(model.vertices);
+    free(model.faces);
+    return model;
+  }
+
+  // Load data
+  FILE* file = fopen(filePath, "r");
+  if (!file) {
+    printf("Error: Could not open file %s\n", filePath);
+    free(model.vertices);
+    free(model.faces);
+    return model;
+  }
+
+  char line[256];
+  int vertexIndex = 0, faceIndex = 0;
+
+  while (fgets(line, sizeof(line), file)) {
+    if (line[0] == 'v' && line[1] == ' ') {
+      // Parse vertex
+      sscanf(line, "v %f %f %f", &model.vertices[vertexIndex].x,
+                                &model.vertices[vertexIndex].y,
+                                &model.vertices[vertexIndex].z);
+      vertexIndex++;
+    } else if (line[0] == 'f' && line[1] == ' ') {
+      // Parse face
+      sscanf(line, "f %d %d %d", &model.faces[faceIndex].v1,
+                                &model.faces[faceIndex].v2,
+                                &model.faces[faceIndex].v3);
+      faceIndex++;
+    }
+  }
+
+  fclose(file);
+
+  model.vertexCount = vertexCount;
+  model.faceCount = faceCount;
+
+  printf("Successfully loaded model with %d vertices and %d faces.\n", vertexCount, faceCount);
+
   return model;
 }
 
