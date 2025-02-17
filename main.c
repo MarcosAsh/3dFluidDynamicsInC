@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Load a font for rendering text
-    TTF_Font* font = TTF_OpenFont("path/to/font.ttf", 24); // Replace with your font path
+    TTF_Font* font = TTF_OpenFont("/home/marcos-ashton/CLionProjects/3d-fluid-simulation-car/fonts/Arial.ttf", 24); // Replace with your font path
     if (!font) {
         printf("Error: Could not load font\n");
         SDL_DestroyRenderer(renderer);
