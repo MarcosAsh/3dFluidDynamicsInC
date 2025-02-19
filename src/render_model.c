@@ -1,4 +1,4 @@
-#include "../lib/model_loader.h"
+#include "../obj-file-loader/lib/model_loader.h"
 #include <SDL2/SDL.h>
 
 void renderModel(SDL_Renderer* renderer, Model* model, int scale) {

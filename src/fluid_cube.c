@@ -1,7 +1,7 @@
 #include "../lib/fluid_cube.h"
 #include "../lib/coloring.h"
 #include "../obj-file-loader/lib/model_loader.h"
-#include "../obj-file-loader/lib/render_model.h"
+#include "../lib/render_model.h"
 
 void SDL_ExitWithError(const char *message) {
     printf("Error: %s > %s\n", message, SDL_GetError());

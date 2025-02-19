@@ -2,11 +2,14 @@
 #include <SDL2/SDL_ttf.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "./lib/fluid_cube.h"
-#include "./lib/coloring.h"
-#include "./obj-file-loader/lib/model_loader.h"
-#include "./obj-file-loader/lib/render_model.h"
 #include <time.h>
+
+#include "../lib/fluid_cube.h"
+#include "../lib/coloring.h"
+#include "../lib/particle_system.h"
+#include "../obj-file-loader/lib/model_loader.h"
+#include "../lib/render_model.h"
+
 
 // Slider variables
 int sliderX = 100;          // X position of the slider
