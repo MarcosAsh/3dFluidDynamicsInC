@@ -1,8 +1,10 @@
 #include "../lib/particle_system.h"
+#include "../lib/fluid_cube.h"
+#include "../lib/config.h"
 
 #include <stdlib.h>
 #include <math.h>
-#include <omp.h>
+#include <omp.h>  // For parallelization
 
 
 // Initialize the particle system
