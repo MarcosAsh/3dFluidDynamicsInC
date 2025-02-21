@@ -10,14 +10,13 @@
 #include "../obj-file-loader/lib/model_loader.h"
 #include "../lib/render_model.h"
 
-
 // Slider variables
 int sliderX = 100;          // X position of the slider
 int sliderY = 50;           // Y position of the slider
 int sliderWidth = 200;      // Width of the slider bar
 int sliderHeight = 20;      // Height of the slider bar
 int handleWidth = 10;       // Width of the slider handle
-int handleX = sliderX;      // X position of the slider handle
+int handleX;                // X position of the slider handle (initialized in main)
 int isDragging = 0;         // Whether the handle is being dragged
 float windSpeed = 0.0f;     // Wind speed in kph (0 to 350)
 
@@ -50,6 +49,9 @@ void renderText(SDL_Renderer* renderer, TTF_Font* font, const char* text, int x,
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize handleX to sliderX
+    handleX = sliderX;
+
     if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         SDL_ExitWithError("Couldn't init SDL2");
     }
