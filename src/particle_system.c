@@ -87,7 +87,7 @@ void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
             if (gridX >= 0 && gridX < GRID_CELL_SIZE && gridY >= 0 && gridY < GRID_CELL_SIZE) {
                 GridCell* cell = &system->grid[gridX][gridY];
                 if (cell->count < MAX_PARTICLES / GRID_CELL_SIZE) {
-                    cell->particles[cell->count++] = p;
+                    cell->particles[cell->count++] = *p;
                 }
             }
         }
@@ -102,7 +102,7 @@ void ParticleSystem_Render(ParticleSystem* system, SDL_Renderer* renderer, int s
         for (int j = 0; j < GRID_CELL_SIZE; j++) {
             GridCell* cell = &system->grid[i][j];
             for (int k = 0; k < cell->count; k++) {
-                Particle* p = cell->particles[k];
+                Particle* p = &cell->particles[k];
 
                 // Calculate distance from the camera (simplified to 2D for now)
                 float distance = sqrt(p->x * p->x + p->y * p->y);
