@@ -15,4 +15,6 @@ add_executable(3d_fluid_simulation_car src/main.c
         src/particle_system.c
         lib/particle_system.h
         lib/config.h
+        lib/opengl_utils.h
+        src/opengl_utils.c
 )
