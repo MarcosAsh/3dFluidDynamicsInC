@@ -17,21 +17,20 @@ GLuint loadShader(const char* path, GLenum type) {
   source[length] = '\0';
   fclose(file);
 
+  // Load and compile shader
   GLuint shader = glCreateShader(type);
-  glShaderSource(shader, 1, (const char**)&source, NULL);
+  glShaderSource(shader, 1, &source, NULL);
   glCompileShader(shader);
 
-  GLint status;
+  // Check for compilation errors
+   GLint status;
   glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
   if (status == GL_FALSE) {
-    char log[1024];
-    glGetShaderInfoLog(shader, sizeof(log), NULL, log);
-    printf("Error: Could not compile shader %s:\n%s\n", path, log);
-    glDeleteShader(shader);
-    return 0;
+      char log[1024];
+      glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+      printf("Shader compilation error: %s\n", log);
+      return 0;
   }
-
-  free(source);
   return shader;
 }
 

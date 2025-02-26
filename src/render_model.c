@@ -1,7 +1,11 @@
 #include "../lib/render_model.h"
 #include <GL/glew.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 void renderModel(Model* model, int scale) {
+  	printf("Rendering model with %d faces\n", model->faceCount);
     // Use OpenGL to render the model
     glBegin(GL_TRIANGLES); // Start drawing triangles
 

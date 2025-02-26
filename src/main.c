@@ -85,8 +85,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Verify OpenGL context (Fix 1)
+    printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
+    printf("GLSL Version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    printf("Renderer: %s\n", glGetString(GL_RENDERER));
+
     // Enable vsync
     SDL_GL_SetSwapInterval(1);
+
+    // Enable depth testing (Fix 5)
+    glEnable(GL_DEPTH_TEST);
+
+    // Set up projection and camera (Fix 4)
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45.0, (double)WIDTH / HEIGHT, 0.1, 100.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    gluLookAt(0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
     // Load shaders
     GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
@@ -97,7 +113,7 @@ int main(int argc, char* argv[]) {
     ParticleSystem_Init(&particleSystem);
 
     // Initialize fluid simulation
-    Model carModel = loadOBJ("car_model.obj");
+    Model carModel = loadOBJ("../assests/3d-files/car_model.obj");
     FluidCube* fluidCube = FluidCubeCreate(WIDTH / 5, HEIGHT / 5, 50, 0.001f, 0.0f, 0.001f, &carModel);
 
     // Create OpenGL buffer for particles
@@ -111,6 +127,10 @@ int main(int argc, char* argv[]) {
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();
     while (running) {
+        // Clear the screen (Fix 3)
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         // Handle events
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -154,7 +174,6 @@ int main(int argc, char* argv[]) {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Render particles
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(particleShaderProgram);
         glBindBuffer(GL_ARRAY_BUFFER, particleBuffer);
         glEnableVertexAttribArray(0);
@@ -162,7 +181,7 @@ int main(int argc, char* argv[]) {
         glDrawArrays(GL_POINTS, 0, MAX_PARTICLES);
 
         // Render the 3D car model
-		renderModel(&carModel, SCALE);
+        renderModel(&carModel, SCALE);
 
         // Swap buffers
         SDL_GL_SwapWindow(window);
