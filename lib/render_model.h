@@ -1,9 +1,9 @@
 #ifndef RENDER_MODEL_H
 #define RENDER_MODEL_H
 
-#include "model_loader.h"
-#include <SDL2/SDL.h>
+#include "../obj-file-loader/lib/model_loader.h"
 
-void renderModel(SDL_Renderer* renderer, Model* model, int scale);
+// Function to render the 3D model using OpenGL
+void renderModel(Model* model, int scale);
 
-#endif //RENDER_MODEL_H
+#endif // RENDER_MODEL_H
