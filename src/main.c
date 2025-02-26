@@ -13,8 +13,8 @@
 #include "../lib/opengl_utils.h"
 
 // Window dimensions
-#define WIDTH 800
-#define HEIGHT 600
+#define WIDTH 1920
+#define HEIGHT 1080
 
 // Slider variables
 int sliderX = 100;
