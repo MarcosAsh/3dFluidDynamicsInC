@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <math.h> // Include math.h for tanf and M_PI
+#include <math.h> 
 
 #include "../lib/fluid_cube.h"
 #include "../lib/coloring.h"
@@ -32,6 +32,7 @@ int handleWidth = 10;
 int handleX;
 int isDragging = 0;
 float windSpeed = 0.0f;
+int M_PI = 3.14159265358979323846;
 
 // Function to render the slider
 void renderSlider(SDL_Renderer* renderer) {

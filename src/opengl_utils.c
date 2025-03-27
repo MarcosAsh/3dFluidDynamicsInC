@@ -23,13 +23,15 @@ GLuint loadShader(const char* path, GLenum type) {
   glCompileShader(shader);
 
   // Check for compilation errors
-   GLint status;
+  GLint status;
   glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
   if (status == GL_FALSE) {
-      char log[1024];
-      glGetShaderInfoLog(shader, sizeof(log), NULL, log);
-      printf("Shader compilation error: %s\n", log);
-      return 0;
+    char log[1024];
+    glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+    printf("Shader compilation error in %s: %s\n", path, log); // Add file path to error message
+    free(source); // Free allocated memory
+    glDeleteShader(shader); // Delete the shader object
+    return 0;
   }
   return shader;
 }
@@ -49,7 +51,7 @@ GLuint createShaderProgram(const char* vertexPath, const char* fragmentPath) {
   if (status == GL_FALSE) {
     char log[1024];
     glGetProgramInfoLog(program, sizeof(log), NULL, log);
-    printf("Error: Could not link shader program:\n%s\n", log);
+    printf("Shader linking error: %s\n", log);
     glDeleteProgram(program);
     return 0;
   }
@@ -72,7 +74,7 @@ GLuint createComputeShader(const char* computePath) {
   if (status == GL_FALSE) {
     char log[1024];
     glGetProgramInfoLog(program, sizeof(log), NULL, log);
-    printf("Error: Could not link compute shader program:\n%s\n", log);
+    printf("Shader linking error: %s\n", log);
     glDeleteProgram(program);
     return 0;
   }
