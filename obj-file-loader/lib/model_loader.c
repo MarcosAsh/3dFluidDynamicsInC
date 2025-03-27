@@ -98,6 +98,11 @@ Model loadOBJ(const char* filePath) {
 
   printf("Successfully loaded model with %d vertices and %d faces.\n", vertexCount, faceCount);
 
+  printf("Model loaded: %d vertices, %d faces\n", model.vertexCount, model.faceCount);
+  if (model.vertexCount == 0 || model.faceCount == 0) {
+    printf("Error: Model contains no vertices or faces.\n");
+  }
+
   return model;
 }
 

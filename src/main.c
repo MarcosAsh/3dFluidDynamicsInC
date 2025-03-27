@@ -1,3 +1,4 @@
+#define _USE_MATH_DEFINES // Enable M_PI and other math constants
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <GL/glew.h>
@@ -6,7 +7,7 @@
 #include <time.h>
 #include <math.h> // Include math.h for tanf and M_PI
 
-#include "../lib/fluid_cube.h" 
+#include "../lib/fluid_cube.h"
 #include "../lib/coloring.h"
 #include "../lib/particle_system.h"
 #include "../obj-file-loader/lib/model_loader.h"
@@ -54,6 +55,14 @@ void renderText(SDL_Renderer* renderer, TTF_Font* font, const char* text, int x,
     SDL_DestroyTexture(texture);
 }
 
+// Function to check OpenGL errors
+void checkGLError(const char* label) {
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR) {
+        printf("OpenGL error at %s: %d\n", label, err);
+    }
+}
+
 int main(int argc, char* argv[]) {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -91,7 +100,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Verify OpenGL context (Fix 1)
+    // Verify OpenGL context
     printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
     printf("GLSL Version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
     printf("Renderer: %s\n", glGetString(GL_RENDERER));
@@ -99,7 +108,7 @@ int main(int argc, char* argv[]) {
     // Enable vsync
     SDL_GL_SetSwapInterval(1);
 
-    // Enable depth testing (Fix 5)
+    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
     // Set up projection and camera using manual matrix calculations
@@ -155,21 +164,28 @@ int main(int argc, char* argv[]) {
     };
 
     // Load shaders
-    GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
-    GLuint computeShaderProgram = createComputeShader("shaders/particle.comp");
+    GLuint particleShaderProgram = createShaderProgram("../shaders/particle.vert", "../shaders/particle.frag");
+    GLuint computeShaderProgram = createComputeShader("../shaders/particle.comp");
 
     // Set projection and view matrices in the shader
     GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
     GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
+    if (projectionLoc == -1) {
+        printf("Error: 'projection' uniform not found in particle shader.\n");
+    }
+    if (viewLoc == -1) {
+        printf("Error: 'view' uniform not found in particle shader.\n");
+    }
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, projection);
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
+    checkGLError("After setting projection and view matrices");
 
     // Initialize particle system
     ParticleSystem particleSystem;
     ParticleSystem_Init(&particleSystem);
 
     // Initialize fluid simulation
-    Model carModel = loadOBJ("../assests/3d-files/car_model.obj");
+    Model carModel = loadOBJ("../assests/3d-files/car-model.obj");
     FluidCube* fluidCube = FluidCubeCreate(WIDTH / 5, HEIGHT / 5, 50, 0.001f, 0.0f, 0.001f, &carModel);
 
     // Create OpenGL buffer for particles
@@ -183,7 +199,7 @@ int main(int argc, char* argv[]) {
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();
     while (running) {
-        // Clear the screen (Fix 3)
+        // Clear the screen
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -235,9 +251,11 @@ int main(int argc, char* argv[]) {
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)offsetof(Particle, x));
         glDrawArrays(GL_POINTS, 0, MAX_PARTICLES);
+        checkGLError("After rendering particles");
 
         // Render the 3D car model
         renderModel(&carModel, SCALE);
+        checkGLError("After rendering model");
 
         // Swap buffers
         SDL_GL_SwapWindow(window);
