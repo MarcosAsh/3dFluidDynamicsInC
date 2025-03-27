@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <cglm/cglm.h> // Add GLM for matrix calculations
+#include <math.h> // Include math.h for tanf and M_PI
 
-#include "../src/fluid_cube.h" // Update the include path
+#include "../lib/fluid_cube.h" 
 #include "../lib/coloring.h"
 #include "../lib/particle_system.h"
 #include "../obj-file-loader/lib/model_loader.h"
@@ -102,10 +102,57 @@ int main(int argc, char* argv[]) {
     // Enable depth testing (Fix 5)
     glEnable(GL_DEPTH_TEST);
 
-    // Set up projection and camera using GLM
-    mat4 projection, view;
-    glm_perspective(glm_rad(45.0f), (float)WIDTH / HEIGHT, 0.1f, 100.0f, projection);
-    glm_lookat((vec3){0.0f, 0.0f, 5.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 1.0f, 0.0f}, view);
+    // Set up projection and camera using manual matrix calculations
+    float aspect = (float)WIDTH / HEIGHT;
+    float fov = 45.0f;
+    float near = 0.1f;
+    float far = 100.0f;
+    float top = tanf(fov * 0.5f * M_PI / 180.0f) * near;
+    float bottom = -top;
+    float right = top * aspect;
+    float left = -right;
+
+    float projection[16] = {
+        (2.0f * near) / (right - left), 0.0f, 0.0f, 0.0f,
+        0.0f, (2.0f * near) / (top - bottom), 0.0f, 0.0f,
+        (right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1.0f,
+        0.0f, 0.0f, -(2.0f * far * near) / (far - near), 0.0f
+    };
+
+    float eyeX = 0.0f, eyeY = 0.0f, eyeZ = 5.0f;
+    float centerX = 0.0f, centerY = 0.0f, centerZ = 0.0f;
+    float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
+
+    float forward[3] = {centerX - eyeX, centerY - eyeY, centerZ - eyeZ};
+    float forwardLength = sqrtf(forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]);
+    forward[0] /= forwardLength;
+    forward[1] /= forwardLength;
+    forward[2] /= forwardLength;
+
+    float up[3] = {upX, upY, upZ};
+    float side[3] = {
+        forward[1] * up[2] - forward[2] * up[1],
+        forward[2] * up[0] - forward[0] * up[2],
+        forward[0] * up[1] - forward[1] * up[0]
+    };
+    float sideLength = sqrtf(side[0] * side[0] + side[1] * side[1] + side[2] * side[2]);
+    side[0] /= sideLength;
+    side[1] /= sideLength;
+    side[2] /= sideLength;
+
+    up[0] = side[1] * forward[2] - side[2] * forward[1];
+    up[1] = side[2] * forward[0] - side[0] * forward[2];
+    up[2] = side[0] * forward[1] - side[1] * forward[0];
+
+    float view[16] = {
+        side[0], up[0], -forward[0], 0.0f,
+        side[1], up[1], -forward[1], 0.0f,
+        side[2], up[2], -forward[2], 0.0f,
+        -(side[0] * eyeX + side[1] * eyeY + side[2] * eyeZ),
+        -(up[0] * eyeX + up[1] * eyeY + up[2] * eyeZ),
+        forward[0] * eyeX + forward[1] * eyeY + forward[2] * eyeZ,
+        1.0f
+    };
 
     // Load shaders
     GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
@@ -114,8 +161,8 @@ int main(int argc, char* argv[]) {
     // Set projection and view matrices in the shader
     GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
     GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, (const GLfloat*)projection);
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, (const GLfloat*)view);
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, projection);
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
 
     // Initialize particle system
     ParticleSystem particleSystem;
