@@ -4,8 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <cglm/cglm.h> // Add GLM for matrix calculations
 
-#include "../lib/fluid_cube.h"
+#include "../src/fluid_cube.h" // Update the include path
 #include "../lib/coloring.h"
 #include "../lib/particle_system.h"
 #include "../obj-file-loader/lib/model_loader.h"
@@ -13,8 +14,13 @@
 #include "../lib/opengl_utils.h"
 
 // Window dimensions
+#ifndef WIDTH
 #define WIDTH 1920
+#endif
+
+#ifndef HEIGHT
 #define HEIGHT 1080
+#endif
 
 // Slider variables
 int sliderX = 100;
@@ -96,17 +102,20 @@ int main(int argc, char* argv[]) {
     // Enable depth testing (Fix 5)
     glEnable(GL_DEPTH_TEST);
 
-    // Set up projection and camera (Fix 4)
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(45.0, (double)WIDTH / HEIGHT, 0.1, 100.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    gluLookAt(0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    // Set up projection and camera using GLM
+    mat4 projection, view;
+    glm_perspective(glm_rad(45.0f), (float)WIDTH / HEIGHT, 0.1f, 100.0f, projection);
+    glm_lookat((vec3){0.0f, 0.0f, 5.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 1.0f, 0.0f}, view);
 
     // Load shaders
     GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
     GLuint computeShaderProgram = createComputeShader("shaders/particle.comp");
+
+    // Set projection and view matrices in the shader
+    GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
+    GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, (const GLfloat*)projection);
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, (const GLfloat*)view);
 
     // Initialize particle system
     ParticleSystem particleSystem;
