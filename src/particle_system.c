@@ -59,6 +59,7 @@ void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
     // Update particles and reinsert them into the grid
     #pragma omp parallel for
     for (int i = 0; i < system->numParticles; i += 8) {
+#ifdef __AVX__
         __m256 p_x = _mm256_loadu_ps(&system->particles[i].x);
         __m256 p_y = _mm256_loadu_ps(&system->particles[i].y);
         __m256 p_z = _mm256_loadu_ps(&system->particles[i].z);
@@ -91,6 +92,24 @@ void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
                 }
             }
         }
+#else
+        for (int j = 0; j < 8; j++) {
+            Particle* p = &system->particles[i + j];
+            p->x += p->vx * dt;
+            p->y += p->vy * dt;
+            p->z += p->vz * dt;
+            p->life -= 0.01f * dt;
+
+            int gridX = (int)(p->x / GRID_CELL_SIZE);
+            int gridY = (int)(p->y / GRID_CELL_SIZE);
+            if (gridX >= 0 && gridX < GRID_CELL_SIZE && gridY >= 0 && gridY < GRID_CELL_SIZE) {
+                GridCell* cell = &system->grid[gridX][gridY];
+                if (cell->count < MAX_PARTICLES / GRID_CELL_SIZE) {
+                    cell->particles[cell->count++] = *p;
+                }
+            }
+        }
+#endif
     }
 }
 

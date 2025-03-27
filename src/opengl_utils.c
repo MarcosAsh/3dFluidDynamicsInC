@@ -6,7 +6,7 @@
 GLuint loadShader(const char* path, GLenum type) {
   FILE* file = fopen(path, "rb");
   if (!file) {
-    printf("Eroor: Could not open the shader file %s \n", path);
+    printf("Error: Could not open the shader file %s \n", path);
     return 0;
   }
   fseek(file, 0, SEEK_END);
@@ -19,7 +19,7 @@ GLuint loadShader(const char* path, GLenum type) {
 
   // Load and compile shader
   GLuint shader = glCreateShader(type);
-  glShaderSource(shader, 1, &source, NULL);
+  glShaderSource(shader, 1, (const GLchar * const *)&source, NULL);
   glCompileShader(shader);
 
   // Check for compilation errors
