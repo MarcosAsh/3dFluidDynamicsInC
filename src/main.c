@@ -6,10 +6,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-#include <string.h>
 
 #include "../lib/fluid_cube.h"
-#include "../lib/coloring.h"
 #include "../lib/particle_system.h"
 #include "../obj-file-loader/lib/model_loader.h"
 #include "../lib/render_model.h"
