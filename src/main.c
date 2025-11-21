@@ -32,7 +32,9 @@ int handleWidth = 10;
 int handleX;
 int isDragging = 0;
 float windSpeed = 0.0f;
-int M_PI = 3.14159265358979323846;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Function to render the slider
 void renderSlider(SDL_Renderer* renderer) {
