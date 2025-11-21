@@ -1,0 +1,39 @@
+#version 430 core
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3 position;
+    float padding1;
+    vec3 velocity;
+    float life;
+};
+
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+uniform float dt;
+uniform vec3 wind;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= particles.length()) return;
+    
+    Particle p = particles[idx];
+    
+    // Update velocity and position
+    p.velocity += wind * dt;
+    p.position += p.velocity * dt;
+    p.life -= 0.01 * dt;
+    
+    // Reset particles that exit right or expire
+    if (p.life <= 0.0 || p.position.x > 4.0) {
+        p.position = vec3(-4.0, 
+                         (fract(sin(float(idx) * 43758.5453)) - 0.5) * 3.0, 
+                         (fract(sin(float(idx) * 12345.6789)) - 0.5) * 3.0);
+        p.velocity = vec3(0.5, 0.0, 0.0);
+        p.life = 1.0;
+    }
+    
+    particles[idx] = p;
+}

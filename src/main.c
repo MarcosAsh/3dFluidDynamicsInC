@@ -1,11 +1,11 @@
-#define _USE_MATH_DEFINES // Enable M_PI and other math constants
+#define _USE_MATH_DEFINES
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
 #include <GL/glew.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <math.h> 
+#include <math.h>
+#include <string.h>
 
 #include "../lib/fluid_cube.h"
 #include "../lib/coloring.h"
@@ -14,7 +14,6 @@
 #include "../lib/render_model.h"
 #include "../lib/opengl_utils.h"
 
-// Window dimensions
 #ifndef WIDTH
 #define WIDTH 1920
 #endif
@@ -23,18 +22,16 @@
 #define HEIGHT 1080
 #endif
 
-// Slider variables
-int sliderX = 100;
-int sliderY = 50;
-int sliderWidth = 200;
-int sliderHeight = 20;
-int handleWidth = 10;
-int handleX;
-int isDragging = 0;
-float windSpeed = 0.0f;
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+#ifndef MAX_PARTICLES
+#define MAX_PARTICLES 50000
+#endif
+
+float windSpeed = 0.0f;
+int M_PI = 3.14159265358979323846;
 
 // Function to render the slider
 void renderSlider(SDL_Renderer* renderer) {
@@ -62,29 +59,81 @@ void renderText(SDL_Renderer* renderer, TTF_Font* font, const char* text, int x,
 void checkGLError(const char* label) {
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
-        printf("OpenGL error at %s: %d\n", label, err);
+        printf("OpenGL error at %s: 0x%x\n", label, err);
     }
 }
 
+void makeIdentity(float* mat) {
+    memset(mat, 0, 16 * sizeof(float));
+    mat[0] = mat[5] = mat[10] = mat[15] = 1.0f;
+}
+
+void makePerspective(float* mat, float fovy, float aspect, float near, float far) {
+    float f = 1.0f / tanf(fovy * M_PI / 360.0f);
+    memset(mat, 0, 16 * sizeof(float));
+    
+    mat[0] = f / aspect;
+    mat[5] = f;
+    mat[10] = (far + near) / (near - far);
+    mat[11] = -1.0f;
+    mat[14] = (2.0f * far * near) / (near - far);
+}
+
+void makeLookAt(float* mat, float eyeX, float eyeY, float eyeZ,
+                float centerX, float centerY, float centerZ,
+                float upX, float upY, float upZ) {
+    float fx = centerX - eyeX;
+    float fy = centerY - eyeY;
+    float fz = centerZ - eyeZ;
+    float flen = sqrtf(fx*fx + fy*fy + fz*fz);
+    fx /= flen; fy /= flen; fz /= flen;
+    
+    float sx = fy * upZ - fz * upY;
+    float sy = fz * upX - fx * upZ;
+    float sz = fx * upY - fy * upX;
+    float slen = sqrtf(sx*sx + sy*sy + sz*sz);
+    sx /= slen; sy /= slen; sz /= slen;
+    
+    float ux = sy * fz - sz * fy;
+    float uy = sz * fx - sx * fz;
+    float uz = sx * fy - sy * fx;
+    
+    memset(mat, 0, 16 * sizeof(float));
+    mat[0] = sx;   mat[4] = ux;   mat[8]  = -fx;  mat[12] = 0.0f;
+    mat[1] = sy;   mat[5] = uy;   mat[9]  = -fy;  mat[13] = 0.0f;
+    mat[2] = sz;   mat[6] = uz;   mat[10] = -fz;  mat[14] = 0.0f;
+    mat[3] = 0.0f; mat[7] = 0.0f; mat[11] = 0.0f; mat[15] = 1.0f;
+    
+    mat[12] = -(sx * eyeX + sy * eyeY + sz * eyeZ);
+    mat[13] = -(ux * eyeX + uy * eyeY + uz * eyeZ);
+    mat[14] = (fx * eyeX + fy * eyeY + fz * eyeZ);
+}
+
 int main(int argc, char* argv[]) {
-    // Initialize SDL
+    srand(time(NULL));
+    
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("SDL_Init Error: %s\n", SDL_GetError());
         return 1;
     }
 
-    // Create SDL window with OpenGL context
-    SDL_Window* window = SDL_CreateWindow("3D Fluid Simulation", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, SDL_WINDOW_OPENGL);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+    SDL_Window* window = SDL_CreateWindow("3D Fluid Simulation", 
+                                          SDL_WINDOWPOS_CENTERED, 
+                                          SDL_WINDOWPOS_CENTERED, 
+                                          WIDTH, HEIGHT, 
+                                          SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
     if (!window) {
         printf("SDL_CreateWindow Error: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
 
-    // Create OpenGL context
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     if (!glContext) {
         printf("SDL_GL_CreateContext Error: %s\n", SDL_GetError());
@@ -93,9 +142,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Initialize GLEW
+    SDL_GL_MakeCurrent(window, glContext);
+
     glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK) {
+    GLenum glewError = glewInit();
+    if (glewError != GLEW_OK) {
         printf("Failed to initialize GLEW\n");
         SDL_GL_DeleteContext(glContext);
         SDL_DestroyWindow(window);
@@ -103,168 +154,127 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Verify OpenGL context
+    glGetError(); // Clear GLEW errors
+
     printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
     printf("GLSL Version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
     printf("Renderer: %s\n", glGetString(GL_RENDERER));
 
-    // Enable vsync
     SDL_GL_SetSwapInterval(1);
-
-    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    
+    checkGLError("After initial GL setup");
 
-    // Set up projection and camera using manual matrix calculations
-    float aspect = (float)WIDTH / HEIGHT;
-    float fov = 45.0f;
-    float near = 0.1f;
-    float far = 100.0f;
-    float top = tanf(fov * 0.5f * M_PI / 180.0f) * near;
-    float bottom = -top;
-    float right = top * aspect;
-    float left = -right;
+    float projection[16];
+    makePerspective(projection, 45.0f, (float)WIDTH / HEIGHT, 0.1f, 100.0f);
 
-    float projection[16] = {
-        (2.0f * near) / (right - left), 0.0f, 0.0f, 0.0f,
-        0.0f, (2.0f * near) / (top - bottom), 0.0f, 0.0f,
-        (right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1.0f,
-        0.0f, 0.0f, -(2.0f * far * near) / (far - near), 0.0f
-    };
+    float view[16];
+    // Camera positioned at an angle to see depth
+    makeLookAt(view, 3.0f, 2.0f, 5.0f,  // Eye position (angle view)
+                    0.0f, 0.0f, 0.0f,   // Look at center
+                    0.0f, 1.0f, 0.0f);  // Up direction
+    GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
+    if (particleShaderProgram == 0) {
+        printf("Failed to create particle shader program\n");
+        return 1;
+    }
+    
+    GLuint computeShaderProgram = createComputeShader("shaders/particle.comp");
+    if (computeShaderProgram == 0) {
+        printf("Failed to create compute shader program\n");
+        return 1;
+    }
 
-    float eyeX = 0.0f, eyeY = 0.0f, eyeZ = 5.0f;
-    float centerX = 0.0f, centerY = 0.0f, centerZ = 0.0f;
-    float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
+    checkGLError("After shader creation");
 
-    float forward[3] = {centerX - eyeX, centerY - eyeY, centerZ - eyeZ};
-    float forwardLength = sqrtf(forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]);
-    forward[0] /= forwardLength;
-    forward[1] /= forwardLength;
-    forward[2] /= forwardLength;
-
-    float up[3] = {upX, upY, upZ};
-    float side[3] = {
-        forward[1] * up[2] - forward[2] * up[1],
-        forward[2] * up[0] - forward[0] * up[2],
-        forward[0] * up[1] - forward[1] * up[0]
-    };
-    float sideLength = sqrtf(side[0] * side[0] + side[1] * side[1] + side[2] * side[2]);
-    side[0] /= sideLength;
-    side[1] /= sideLength;
-    side[2] /= sideLength;
-
-    up[0] = side[1] * forward[2] - side[2] * forward[1];
-    up[1] = side[2] * forward[0] - side[0] * forward[2];
-    up[2] = side[0] * forward[1] - side[1] * forward[0];
-
-    float view[16] = {
-        side[0], up[0], -forward[0], 0.0f,
-        side[1], up[1], -forward[1], 0.0f,
-        side[2], up[2], -forward[2], 0.0f,
-        -(side[0] * eyeX + side[1] * eyeY + side[2] * eyeZ),
-        -(up[0] * eyeX + up[1] * eyeY + up[2] * eyeZ),
-        forward[0] * eyeX + forward[1] * eyeY + forward[2] * eyeZ,
-        1.0f
-    };
-
-    // Load shaders
-    GLuint particleShaderProgram = createShaderProgram("../shaders/particle.vert", "../shaders/particle.frag");
-    GLuint computeShaderProgram = createComputeShader("../shaders/particle.comp");
-
-    // Set projection and view matrices in the shader
+    glUseProgram(particleShaderProgram);
     GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
     GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
-    if (projectionLoc == -1) {
-        printf("Error: 'projection' uniform not found in particle shader.\n");
+    
+    if (projectionLoc != -1) glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, projection);
+    if (viewLoc != -1) glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
+    
+    checkGLError("After setting uniforms");
+
+    // Initialize particles
+    Particle particles[MAX_PARTICLES];
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        // Particles spawn at the left side (-4.0) and spread across Y and Z
+        particles[i].x = -4.0f;  // All start from left side
+        particles[i].y = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;  // Vertical spread
+        particles[i].z = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;  // Depth spread
+        particles[i].vx = 0.5f; // Main wind direction
+        particles[i].vy = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+        particles[i].vz = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+        particles[i].life = 1.0f;
     }
-    if (viewLoc == -1) {
-        printf("Error: 'view' uniform not found in particle shader.\n");
-    }
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, projection);
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
-    checkGLError("After setting projection and view matrices");
 
-    // Initialize particle system
-    ParticleSystem particleSystem;
-    ParticleSystem_Init(&particleSystem);
-
-    // Initialize fluid simulation
-    Model carModel = loadOBJ("../assests/3d-files/car-model.obj");
-    FluidCube* fluidCube = FluidCubeCreate(WIDTH / 5, HEIGHT / 5, 50, 0.001f, 0.0f, 0.001f, &carModel);
-
-    // Create OpenGL buffer for particles
     GLuint particleBuffer;
     glGenBuffers(1, &particleBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_PARTICLES * sizeof(Particle), NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_PARTICLES * sizeof(Particle), particles, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
+    checkGLError("After creating particle buffer");
 
-    // Main loop
+    GLuint particleVAO;
+    glGenVertexArrays(1, &particleVAO);
+    glBindVertexArray(particleVAO);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, particleBuffer);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)0);
+    
+    glBindVertexArray(0);
+    checkGLError("After creating VAO");
+
+    printf("Initialization complete. Starting main loop...\n");
+
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();
+    int frameCount = 0;
+    
     while (running) {
-        // Clear the screen
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+        frameCount++;
+        
+        glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Handle events
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = 0;
-            }
-            // Handle slider input
-            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-                int mouseX = event.button.x;
-                int mouseY = event.button.y;
-                if (mouseX >= handleX && mouseX <= handleX + handleWidth &&
-                    mouseY >= sliderY && mouseY <= sliderY + sliderHeight) {
-                    isDragging = 1;
-                }
-            }
-            if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
-                isDragging = 0;
-            }
-            if (event.type == SDL_MOUSEMOTION && isDragging) {
-                int mouseX = event.motion.x;
-                handleX = mouseX - handleWidth / 2;
-                if (handleX < sliderX) handleX = sliderX;
-                if (handleX > sliderX + sliderWidth - handleWidth) handleX = sliderX + sliderWidth - handleWidth;
-                windSpeed = ((float)(handleX - sliderX) / (sliderWidth - handleWidth)) * 350.0f;
+            } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+                running = 0;
             }
         }
 
-        // Calculate delta time
         Uint32 currentTime = SDL_GetTicks();
         float deltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        // Update fluid simulation
-        FluidCubeStep(fluidCube);
-
-        // Update particles with compute shader
         glUseProgram(computeShaderProgram);
-        glUniform1f(glGetUniformLocation(computeShaderProgram, "dt"), deltaTime);
-        glUniform3f(glGetUniformLocation(computeShaderProgram, "wind"), windSpeed, 0.0f, 0.0f);
+        GLint dtLoc = glGetUniformLocation(computeShaderProgram, "dt");
+        GLint windLoc = glGetUniformLocation(computeShaderProgram, "wind");
+        
+        if (dtLoc != -1) glUniform1f(dtLoc, deltaTime);
+        if (windLoc != -1) glUniform3f(windLoc, windSpeed * 0.01f, 0.0f, 0.0f);
+        
         glDispatchCompute((MAX_PARTICLES + 255) / 256, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
-        // Render particles
         glUseProgram(particleShaderProgram);
-        glBindBuffer(GL_ARRAY_BUFFER, particleBuffer);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)offsetof(Particle, x));
+        glBindVertexArray(particleVAO);
         glDrawArrays(GL_POINTS, 0, MAX_PARTICLES);
-        checkGLError("After rendering particles");
 
-        // Render the 3D car model
-        renderModel(&carModel, SCALE);
-        checkGLError("After rendering model");
+        if (frameCount % 60 == 0) {
+            printf("Frame %d - FPS: %.1f\n", frameCount, 1.0f / deltaTime);
+        }
 
-        // Swap buffers
         SDL_GL_SwapWindow(window);
     }
 
-    // Cleanup
+    glDeleteVertexArrays(1, &particleVAO);
     glDeleteBuffers(1, &particleBuffer);
     glDeleteProgram(particleShaderProgram);
     glDeleteProgram(computeShaderProgram);
@@ -272,5 +282,6 @@ int main(int argc, char* argv[]) {
     SDL_DestroyWindow(window);
     SDL_Quit();
 
+    printf("Cleanup complete. Exiting.\n");
     return 0;
 }

@@ -3,18 +3,44 @@ project(3d_fluid_simulation_car C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(3d_fluid_simulation_car src/main.c
-        lib/fluid_cube.h
-        lib/coloring.h
-        src/coloring.c
-        src/fluid_cube.c
-        obj-file-loader/lib/model_loader.h
-        obj-file-loader/lib/model_laoder.c
-        src/render_model.c
-        lib/render_model.h
-        src/particle_system.c
-        lib/particle_system.h
-        lib/config.h
-        lib/opengl_utils.h
-        src/opengl_utils.c
+# Use pkg-config to find libraries
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SDL2 REQUIRED sdl2)
+pkg_check_modules(SDL2_TTF REQUIRED SDL2_ttf)
+pkg_check_modules(GLEW REQUIRED glew)
+pkg_check_modules(GL REQUIRED gl)
+
+add_executable(3d_fluid_simulation_car 
+    src/main.c
+    src/coloring.c
+    src/fluid_cube.c
+    obj-file-loader/lib/model_loader.c
+    src/render_model.c
+    src/particle_system.c
+    src/opengl_utils.c
+)
+
+# Link libraries
+target_link_libraries(3d_fluid_simulation_car 
+    ${SDL2_LIBRARIES}
+    ${SDL2_TTF_LIBRARIES}
+    ${GLEW_LIBRARIES}
+    ${GL_LIBRARIES}
+    m
+)
+
+# Include directories
+target_include_directories(3d_fluid_simulation_car PRIVATE 
+    ${SDL2_INCLUDE_DIRS}
+    ${SDL2_TTF_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+    ${GL_INCLUDE_DIRS}
+)
+
+# Link directories
+target_link_directories(3d_fluid_simulation_car PRIVATE
+    ${SDL2_LIBRARY_DIRS}
+    ${SDL2_TTF_LIBRARY_DIRS}
+    ${GLEW_LIBRARY_DIRS}
+    ${GL_LIBRARY_DIRS}
 )
