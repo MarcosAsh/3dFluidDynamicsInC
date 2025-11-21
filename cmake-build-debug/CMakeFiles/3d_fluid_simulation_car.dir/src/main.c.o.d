@@ -190,9 +190,10 @@ CMakeFiles/3d_fluid_simulation_car.dir/src/main.c.o: \
  /usr/include/SDL2/SDL_render.h /usr/include/SDL2/SDL_shape.h \
  /usr/include/SDL2/SDL_system.h /usr/include/SDL2/SDL_timer.h \
  /usr/include/SDL2/SDL_version.h /usr/include/SDL2/SDL_locale.h \
- /usr/include/SDL2/SDL_misc.h /usr/include/GL/glew.h \
- /usr/include/GL/glu.h /usr/include/GL/gl.h /usr/include/time.h \
- /usr/include/bits/time.h /usr/include/bits/types/struct_tm.h \
+ /usr/include/SDL2/SDL_misc.h /usr/include/SDL2/SDL_ttf.h \
+ /usr/include/SDL2/SDL.h /usr/include/GL/glew.h /usr/include/GL/glu.h \
+ /usr/include/GL/gl.h /usr/include/time.h /usr/include/bits/time.h \
+ /usr/include/bits/types/struct_tm.h \
  /usr/include/bits/types/struct_itimerspec.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/fluid_cube.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/../obj-file-loader/lib/model_loader.h \
