@@ -239,9 +239,7 @@ int main(int argc, char* argv[]) {
     ParticleSystem_Init(&particleSystem);
 
     // Initialize fluid simulation
-    Model carModel = loadOBJ("assets/3d-files/car-model.obj");
-    printf("=== MODEL DEBUG ===\n");
-    printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
+    Model carModel = loadOBJ("/home/marcos_ashton/3dFluidDynamicsInC/assets/3d-files/car-model.obj");    printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
     if (carModel.vertexCount > 0) {
         printf("First vertex: (%.2f, %.2f, %.2f)\n", 
             carModel.vertices[0].x, carModel.vertices[0].y, carModel.vertices[0].z);
@@ -295,7 +293,7 @@ int main(int argc, char* argv[]) {
         glBindVertexArray(particleVAO);
         glDrawArrays(GL_POINTS, 0, MAX_PARTICLES);
         checkGLError("After rendering particles");
-
+        
         // Render the 3D car model
         if (carModel.faceCount > 0) {
             glUseProgram(0);  // Switch to fixed pipeline for old OpenGL

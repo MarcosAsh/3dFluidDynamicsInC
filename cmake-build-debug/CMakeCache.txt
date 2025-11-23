@@ -136,6 +136,9 @@ CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 //Value Computed by CMake
 CMAKE_PROJECT_NAME:STATIC=3d_fluid_simulation_car
 
+//Value Computed by CMake
+CMAKE_PROJECT_SPDX_LICENSE:STATIC=
+
 //Path to a program.
 CMAKE_RANLIB:FILEPATH=/usr/bin/ranlib
 
@@ -248,9 +251,9 @@ CMAKE_CACHEFILE_DIR:INTERNAL=/home/marcos_ashton/3dFluidDynamicsInC/cmake-build-
 //Major version of cmake used to create the current loaded cache
 CMAKE_CACHE_MAJOR_VERSION:INTERNAL=4
 //Minor version of cmake used to create the current loaded cache
-CMAKE_CACHE_MINOR_VERSION:INTERNAL=1
+CMAKE_CACHE_MINOR_VERSION:INTERNAL=2
 //Patch version of cmake used to create the current loaded cache
-CMAKE_CACHE_PATCH_VERSION:INTERNAL=2
+CMAKE_CACHE_PATCH_VERSION:INTERNAL=0
 //ADVANCED property for variable: CMAKE_COLOR_MAKEFILE
 CMAKE_COLOR_MAKEFILE-ADVANCED:INTERNAL=1
 //Path to CMake executable.
@@ -503,10 +506,10 @@ SDL2_TTF_STATIC_CFLAGS:INTERNAL=-I/usr/include/SDL2;-I/usr/include;-D_GNU_SOURCE
 SDL2_TTF_STATIC_CFLAGS_I:INTERNAL=
 SDL2_TTF_STATIC_CFLAGS_OTHER:INTERNAL=-D_GNU_SOURCE=1;-D_REENTRANT;-pthread
 SDL2_TTF_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include/SDL2;/usr/include;/usr/include/harfbuzz;/usr/include/glib-2.0;/usr/lib/glib-2.0/include;/usr/include/sysprof-6;/usr/include/freetype2;/usr/include/libpng16
-SDL2_TTF_STATIC_LDFLAGS:INTERNAL=-L/usr/lib;-lSDL2_ttf;-lSDL2;-lharfbuzz;-pthread;-lm;-lglib-2.0;-lm;-lsysprof-capture-4;-Wl,-z,nodelete;-pthread;-lpcre2-8;-pthread;-lpthread;-lgraphite2;-lfreetype;-ldl;-lbz2;-lpng16;-lm;-lm;-lz;-lbrotlidec;-lbrotlicommon
+SDL2_TTF_STATIC_LDFLAGS:INTERNAL=-L/usr/lib;-lSDL2_ttf;-lSDL2;-lharfbuzz;-pthread;-lm;-lglib-2.0;-latomic;-lm;-lsysprof-capture-4;-Wl,-z,nodelete;-pthread;-lpcre2-8;-pthread;-lpthread;-lgraphite2;-lfreetype;-ldl;-lbz2;-lpng16;-lm;-lm;-lz;-lbrotlidec;-lbrotlicommon
 SDL2_TTF_STATIC_LDFLAGS_OTHER:INTERNAL=-pthread;-Wl,-z,nodelete;-pthread;-pthread
 SDL2_TTF_STATIC_LIBDIR:INTERNAL=
-SDL2_TTF_STATIC_LIBRARIES:INTERNAL=SDL2_ttf;SDL2;harfbuzz;m;glib-2.0;m;sysprof-capture-4;pcre2-8;pthread;graphite2;freetype;dl;bz2;png16;m;m;z;brotlidec;brotlicommon
+SDL2_TTF_STATIC_LIBRARIES:INTERNAL=SDL2_ttf;SDL2;harfbuzz;m;glib-2.0;atomic;m;sysprof-capture-4;pcre2-8;pthread;graphite2;freetype;dl;bz2;png16;m;m;z;brotlidec;brotlicommon
 SDL2_TTF_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib
 SDL2_TTF_STATIC_LIBS:INTERNAL=
 SDL2_TTF_STATIC_LIBS_L:INTERNAL=
