@@ -3,11 +3,11 @@
 
 #include <SDL2/SDL.h>
 #include "fluid_cube.h"
-#include "config.h"  // MAX_PARTICLES is defined here
+#include "config.h" 
 
 #define GRID_CELL_SIZE 10   // Size of each grid cell
 
-// Particle structure - MUST match GPU shader struct layout (std430)
+// Particle structure
 // The struct has padding to align with GPU memory layout
 typedef struct {
     float x, y, z;    // Position (vec3)
@@ -16,7 +16,7 @@ typedef struct {
     float life;       // Lifetime (0.0 to 1.0)
 } Particle;
 
-// Grid cell structure for spatial partitioning (CPU-side optimization)
+// Grid cell structure for spatial partitioning
 typedef struct {
     Particle particles[MAX_PARTICLES / GRID_CELL_SIZE];
     int count;
@@ -29,7 +29,7 @@ typedef struct {
     GridCell grid[GRID_CELL_SIZE][GRID_CELL_SIZE];
 } ParticleSystem;
 
-// Car collision bounds (for CPU fallback)
+// Car collision bounds
 typedef struct {
     float minX, minY, minZ;
     float maxX, maxY, maxZ;

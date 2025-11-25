@@ -292,7 +292,7 @@ void FluidCubeStep(FluidCube *cube) {
     float *Vy0 = cube->Vy0;
     float *Vz0 = cube->Vz0;
     float *p = cube->s;       // Pressure array
-    float *div = cube->density; // Divergence array (reusing density array)
+    float *div = cube->density; // Divergence array
 
     // Diffuse velocity fields
     diffuse(1, Vx0, Vx, cube->visc, cube->dt, 4, sizeX, sizeY, sizeZ, cube);

@@ -17,8 +17,7 @@
 #define DEPTH 500
 #define SCALE 5
 
-// Particle count - used for both CPU and GPU particle systems
-// Note: Large values (50000+) require heap allocation, not stack!
+// Particle count used for both CPU and GPU particle systems
 #ifndef MAX_PARTICLES
 #define MAX_PARTICLES 10000
 #endif

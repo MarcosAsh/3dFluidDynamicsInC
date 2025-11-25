@@ -29,7 +29,7 @@ void DensityAndVelocityToColor(float density, float velX, float velY, float velZ
 
     float velMagnitude = sqrt(velX * velX + velY * velY + velZ * velZ);
     float normalizedVel = velMagnitude / velThreshold;
-    normalizedVel = normalizedVel > 1.0f ? 1.0f : normalizedVel; // Clamp to 1.0
+    normalizedVel = normalizedVel > 1.0f ? 1.0f : normalizedVel; // Clamp to 1
 
     // Combine density and velocity into a single color
     *r = 0;
