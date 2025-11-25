@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <float.h>
 
 #include "../lib/fluid_cube.h"
 #include "../lib/particle_system.h"
@@ -13,7 +14,6 @@
 #include "../lib/render_model.h"
 #include "../lib/opengl_utils.h"
 
-// ADD THESE DEFINITIONS
 #ifndef WIDTH
 #define WIDTH 1920
 #endif
@@ -26,13 +26,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifndef MAX_PARTICLES
-#define MAX_PARTICLES 50000
-#endif
-
 #ifndef SCALE
 #define SCALE 5
 #endif
+
+// Use MAX_PARTICLES from config.h, but define a local one for GPU if needed
+#define GPU_PARTICLES MAX_PARTICLES
 
 // Slider variables
 int sliderX = 100;
@@ -44,6 +43,55 @@ int handleX = 100;
 int isDragging = 0;
 float windSpeed = 1.0f;
 
+// Car bounding box structure
+typedef struct {
+    float minX, minY, minZ;
+    float maxX, maxY, maxZ;
+    float centerX, centerY, centerZ;
+} CarBounds;
+
+// Function to compute bounding box from model
+CarBounds computeModelBounds(Model* model, float scale, float offsetX, float offsetY, float offsetZ) {
+    CarBounds bounds;
+    
+    if (model == NULL || model->vertexCount == 0) {
+        // Default bounds if no model
+        printf("Warning: No model vertices, using default bounds\n");
+        bounds.minX = bounds.minY = bounds.minZ = -0.5f;
+        bounds.maxX = bounds.maxY = bounds.maxZ = 0.5f;
+        bounds.centerX = bounds.centerY = bounds.centerZ = 0.0f;
+        return bounds;
+    }
+    
+    bounds.minX = bounds.minY = bounds.minZ = FLT_MAX;
+    bounds.maxX = bounds.maxY = bounds.maxZ = -FLT_MAX;
+    
+    for (int i = 0; i < model->vertexCount; i++) {
+        float x = model->vertices[i].x * scale + offsetX;
+        float y = model->vertices[i].y * scale + offsetY;
+        float z = model->vertices[i].z * scale + offsetZ;
+        
+        if (x < bounds.minX) bounds.minX = x;
+        if (y < bounds.minY) bounds.minY = y;
+        if (z < bounds.minZ) bounds.minZ = z;
+        if (x > bounds.maxX) bounds.maxX = x;
+        if (y > bounds.maxY) bounds.maxY = y;
+        if (z > bounds.maxZ) bounds.maxZ = z;
+    }
+    
+    bounds.centerX = (bounds.minX + bounds.maxX) * 0.5f;
+    bounds.centerY = (bounds.minY + bounds.maxY) * 0.5f;
+    bounds.centerZ = (bounds.minZ + bounds.maxZ) * 0.5f;
+    
+    printf("Model bounds: min(%.2f, %.2f, %.2f) max(%.2f, %.2f, %.2f)\n",
+           bounds.minX, bounds.minY, bounds.minZ,
+           bounds.maxX, bounds.maxY, bounds.maxZ);
+    printf("Model center: (%.2f, %.2f, %.2f)\n",
+           bounds.centerX, bounds.centerY, bounds.centerZ);
+    
+    return bounds;
+}
+
 // Function to check OpenGL errors
 void checkGLError(const char* label) {
     GLenum err;
@@ -53,9 +101,11 @@ void checkGLError(const char* label) {
 }
 
 int main(int argc, char* argv[]) {
+    printf("Starting 3D Fluid Simulation...\n");
     srand(time(NULL));
     
     // Initialize SDL
+    printf("Initializing SDL...\n");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("SDL_Init Error: %s\n", SDL_GetError());
         return 1;
@@ -64,12 +114,13 @@ int main(int argc, char* argv[]) {
     // Set OpenGL attributes BEFORE creating window
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY); // CHANGED TO COMPATIBILITY
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     // Create SDL window with OpenGL context
-    SDL_Window* window = SDL_CreateWindow("3D Fluid Simulation", 
+    printf("Creating window...\n");
+    SDL_Window* window = SDL_CreateWindow("3D Fluid Simulation - Wind Tunnel with Collisions", 
                                         SDL_WINDOWPOS_CENTERED, 
                                         SDL_WINDOWPOS_CENTERED, 
                                         WIDTH, HEIGHT, 
@@ -81,6 +132,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create OpenGL context
+    printf("Creating OpenGL context...\n");
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     if (!glContext) {
         printf("SDL_GL_CreateContext Error: %s\n", SDL_GetError());
@@ -92,6 +144,7 @@ int main(int argc, char* argv[]) {
     SDL_GL_MakeCurrent(window, glContext);
 
     // Initialize GLEW
+    printf("Initializing GLEW...\n");
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
         printf("Failed to initialize GLEW\n");
@@ -171,15 +224,23 @@ int main(int argc, char* argv[]) {
     };
 
     // Load shaders
+    printf("Loading shaders...\n");
     GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
     if (particleShaderProgram == 0) {
         printf("Failed to create particle shader program\n");
+        SDL_GL_DeleteContext(glContext);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
         return 1;
     }
     
     GLuint computeShaderProgram = createComputeShader("shaders/particle.comp");
     if (computeShaderProgram == 0) {
         printf("Failed to create compute shader program\n");
+        glDeleteProgram(particleShaderProgram);
+        SDL_GL_DeleteContext(glContext);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
         return 1;
     }
 
@@ -199,26 +260,75 @@ int main(int argc, char* argv[]) {
     
     checkGLError("After setting uniforms");
 
+    // Load car model first to compute bounds
+    printf("Loading car model...\n");
+    Model carModel = loadOBJ("assets/3d-files/car-model.obj");
+    
+    // Check if model loaded - try alternative paths if not
+    if (carModel.vertexCount == 0) {
+        printf("Trying alternative path...\n");
+        carModel = loadOBJ("/home/marcos_ashton/3dFluidDynamicsInC/assets/3d-files/car-model.obj");
+    }
+    if (carModel.vertexCount == 0) {
+        printf("Trying another path...\n");
+        carModel = loadOBJ("../assets/3d-files/car-model.obj");
+    }
+    
+    printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
+    
+    // Compute car bounds using the same scale/offset as render_model.c
+    float modelScale = 0.05f;
+    float offsetX = 0.0f;
+    float offsetY = -0.2f;
+    float offsetZ = -0.9f;
+    
+    CarBounds carBounds = computeModelBounds(&carModel, modelScale, offsetX, offsetY, offsetZ);
+    
+    // Get uniform locations for collision parameters in compute shader
+    glUseProgram(computeShaderProgram);
+    GLint carMinLoc = glGetUniformLocation(computeShaderProgram, "carMin");
+    GLint carMaxLoc = glGetUniformLocation(computeShaderProgram, "carMax");
+    GLint carCenterLoc = glGetUniformLocation(computeShaderProgram, "carCenter");
+    GLint collisionEnabledLoc = glGetUniformLocation(computeShaderProgram, "collisionEnabled");
+    
+    printf("Collision uniform locations: carMin=%d, carMax=%d, carCenter=%d, enabled=%d\n",
+           carMinLoc, carMaxLoc, carCenterLoc, collisionEnabledLoc);
+
+    // IMPORTANT: Allocate particles on HEAP, not stack (would cause stack overflow!)
+    printf("Allocating %d particles on heap...\n", GPU_PARTICLES);
+    Particle* particles = (Particle*)malloc(GPU_PARTICLES * sizeof(Particle));
+    if (!particles) {
+        printf("Failed to allocate particle memory!\n");
+        freeModel(&carModel);
+        glDeleteProgram(particleShaderProgram);
+        glDeleteProgram(computeShaderProgram);
+        SDL_GL_DeleteContext(glContext);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    
     // Initialize particles - WIND TUNNEL STYLE
-    Particle particles[MAX_PARTICLES];
-    for (int i = 0; i < MAX_PARTICLES; i++) {
+    for (int i = 0; i < GPU_PARTICLES; i++) {
         // Particles spawn at the left side
-        particles[i].x = -4.0f;
+        particles[i].x = -4.0f + ((float)rand() / RAND_MAX) * 0.5f;
         particles[i].y = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
         particles[i].z = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
+        particles[i].padding1 = 0.0f;
         
         // Wind tunnel flow: left to right
-        particles[i].vx = 0.5f;
+        particles[i].vx = 0.5f + ((float)rand() / RAND_MAX) * 0.2f;
         particles[i].vy = ((float)rand() / RAND_MAX - 0.5f) * 0.05f;
         particles[i].vz = ((float)rand() / RAND_MAX - 0.5f) * 0.05f;
         particles[i].life = 1.0f;
     }
 
     // Create OpenGL buffer for particles
+    printf("Creating particle buffer...\n");
     GLuint particleBuffer;
     glGenBuffers(1, &particleBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_PARTICLES * sizeof(Particle), particles, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, GPU_PARTICLES * sizeof(Particle), particles, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
     checkGLError("After creating particle buffer");
 
@@ -234,21 +344,19 @@ int main(int argc, char* argv[]) {
     glBindVertexArray(0);
     checkGLError("After creating VAO");
 
-    // Initialize particle system (for CPU fallback if needed)
-    ParticleSystem particleSystem;
-    ParticleSystem_Init(&particleSystem);
-
-    // Initialize fluid simulation
-    Model carModel = loadOBJ("/home/marcos_ashton/3dFluidDynamicsInC/assets/3d-files/car-model.obj");    printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
+    // Initialize fluid simulation (optional - can be NULL if not using fluid sim)
+    printf("Creating fluid cube...\n");
+    FluidCube* fluidCube = NULL;
     if (carModel.vertexCount > 0) {
-        printf("First vertex: (%.2f, %.2f, %.2f)\n", 
-            carModel.vertices[0].x, carModel.vertices[0].y, carModel.vertices[0].z);
+        fluidCube = FluidCubeCreate(WIDTH / 10, HEIGHT / 10, 20, 0.001f, 0.0f, 0.001f, &carModel);
     }
-    printf("==================\n");
-    
-    FluidCube* fluidCube = FluidCubeCreate(WIDTH / 5, HEIGHT / 5, 50, 0.001f, 0.0f, 0.001f, &carModel);
 
     printf("Initialization complete. Starting main loop...\n");
+    printf("Particle collisions with car model ENABLED\n");
+    printf("Controls: C = toggle collisions, UP/DOWN = adjust wind speed, ESC = quit\n");
+
+    // Collision toggle
+    int collisionEnabled = 1;
 
     // Main loop
     int running = 1;
@@ -267,8 +375,21 @@ int main(int argc, char* argv[]) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = 0;
-            } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
-                running = 0;
+            } else if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_ESCAPE) {
+                    running = 0;
+                } else if (event.key.keysym.sym == SDLK_c) {
+                    // Toggle collision
+                    collisionEnabled = !collisionEnabled;
+                    printf("Collisions %s\n", collisionEnabled ? "ENABLED" : "DISABLED");
+                } else if (event.key.keysym.sym == SDLK_UP) {
+                    windSpeed += 0.5f;
+                    printf("Wind speed: %.1f\n", windSpeed);
+                } else if (event.key.keysym.sym == SDLK_DOWN) {
+                    windSpeed -= 0.5f;
+                    if (windSpeed < 0.0f) windSpeed = 0.0f;
+                    printf("Wind speed: %.1f\n", windSpeed);
+                }
             }
         }
 
@@ -279,19 +400,35 @@ int main(int argc, char* argv[]) {
 
         // Update particles with compute shader
         glUseProgram(computeShaderProgram);
+        
+        // Set time and wind uniforms
         GLint dtLoc = glGetUniformLocation(computeShaderProgram, "dt");
         GLint windLoc = glGetUniformLocation(computeShaderProgram, "wind");
         
         if (dtLoc != -1) glUniform1f(dtLoc, deltaTime);
         if (windLoc != -1) glUniform3f(windLoc, windSpeed * 0.01f, 0.0f, 0.0f);
         
-        glDispatchCompute((MAX_PARTICLES + 255) / 256, 1, 1);
+        // Set collision parameters
+        if (carMinLoc != -1) {
+            glUniform3f(carMinLoc, carBounds.minX, carBounds.minY, carBounds.minZ);
+        }
+        if (carMaxLoc != -1) {
+            glUniform3f(carMaxLoc, carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        }
+        if (carCenterLoc != -1) {
+            glUniform3f(carCenterLoc, carBounds.centerX, carBounds.centerY, carBounds.centerZ);
+        }
+        if (collisionEnabledLoc != -1) {
+            glUniform1i(collisionEnabledLoc, collisionEnabled);
+        }
+        
+        glDispatchCompute((GPU_PARTICLES + 255) / 256, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         // Render particles
         glUseProgram(particleShaderProgram);
         glBindVertexArray(particleVAO);
-        glDrawArrays(GL_POINTS, 0, MAX_PARTICLES);
+        glDrawArrays(GL_POINTS, 0, GPU_PARTICLES);
         checkGLError("After rendering particles");
         
         // Render the 3D car model
@@ -303,7 +440,10 @@ int main(int argc, char* argv[]) {
 
         // Print debug info every 60 frames
         if (frameCount % 60 == 0) {
-            printf("Frame %d - FPS: %.1f\n", frameCount, 1.0f / deltaTime);
+            printf("Frame %d - FPS: %.1f - Collisions: %s - Wind: %.1f\n", 
+                   frameCount, 1.0f / deltaTime,
+                   collisionEnabled ? "ON" : "OFF",
+                   windSpeed);
         }
 
         // Swap buffers
@@ -311,6 +451,10 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    printf("Cleaning up...\n");
+    free(particles);  // Free heap-allocated particles
+    freeModel(&carModel);
+    if (fluidCube) FluidCubeFree(fluidCube);
     glDeleteVertexArrays(1, &particleVAO);
     glDeleteBuffers(1, &particleBuffer);
     glDeleteProgram(particleShaderProgram);

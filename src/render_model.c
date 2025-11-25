@@ -9,7 +9,7 @@ void renderModel(Model* model, int scale) {
     
     glPushMatrix();
     
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glColor3f(1.0f, 1.0f, 0.0f);  // Yellow
     
     glBegin(GL_TRIANGLES);

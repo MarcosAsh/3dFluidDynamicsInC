@@ -14,6 +14,62 @@ layout(std430, binding = 0) buffer ParticleBuffer {
 
 uniform float dt;
 uniform vec3 wind;
+uniform vec3 carMin;      // Car bounding box min
+uniform vec3 carMax;      // Car bounding box max
+uniform vec3 carCenter;   // Car center for deflection
+uniform int collisionEnabled;
+
+// Check if point is inside axis-aligned bounding box
+bool isInsideAABB(vec3 pos, vec3 minB, vec3 maxB) {
+    return pos.x >= minB.x && pos.x <= maxB.x &&
+           pos.y >= minB.y && pos.y <= maxB.y &&
+           pos.z >= minB.z && pos.z <= maxB.z;
+}
+
+// Get the surface normal for collision response (simplified box collision)
+vec3 getCollisionNormal(vec3 pos, vec3 minB, vec3 maxB, vec3 center) {
+    vec3 toParticle = pos - center;
+    vec3 absDir = abs(toParticle);
+    vec3 halfSize = (maxB - minB) * 0.5;
+    
+    // Find which face we're closest to
+    vec3 normal = vec3(0.0);
+    
+    if (absDir.x / halfSize.x > absDir.y / halfSize.y && 
+        absDir.x / halfSize.x > absDir.z / halfSize.z) {
+        normal.x = sign(toParticle.x);
+    } else if (absDir.y / halfSize.y > absDir.z / halfSize.z) {
+        normal.y = sign(toParticle.y);
+    } else {
+        normal.z = sign(toParticle.z);
+    }
+    
+    return normal;
+}
+
+// Push particle out of the bounding box
+vec3 pushOutOfBox(vec3 pos, vec3 minB, vec3 maxB) {
+    vec3 center = (minB + maxB) * 0.5;
+    vec3 halfSize = (maxB - minB) * 0.5;
+    vec3 toParticle = pos - center;
+    
+    // Find penetration depth for each axis
+    vec3 penetration;
+    penetration.x = halfSize.x - abs(toParticle.x);
+    penetration.y = halfSize.y - abs(toParticle.y);
+    penetration.z = halfSize.z - abs(toParticle.z);
+    
+    // Push out along the axis with minimum penetration
+    if (penetration.x < penetration.y && penetration.x < penetration.z) {
+        pos.x = center.x + sign(toParticle.x) * (halfSize.x + 0.01);
+    } else if (penetration.y < penetration.z) {
+        pos.y = center.y + sign(toParticle.y) * (halfSize.y + 0.01);
+    } else {
+        pos.z = center.z + sign(toParticle.z) * (halfSize.z + 0.01);
+    }
+    
+    return pos;
+}
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
@@ -21,18 +77,61 @@ void main() {
     
     Particle p = particles[idx];
     
-    // Update velocity and position
+    // Store old position for collision detection
+    vec3 oldPos = p.position;
+    
+    // Update velocity with wind
     p.velocity += wind * dt;
+    
+    // Update position
     p.position += p.velocity * dt;
+    
+    // Collision detection with car bounding box
+    if (collisionEnabled == 1) {
+        if (isInsideAABB(p.position, carMin, carMax)) {
+            // Get collision normal
+            vec3 normal = getCollisionNormal(p.position, carMin, carMax, carCenter);
+            
+            // Push particle out of the box
+            p.position = pushOutOfBox(p.position, carMin, carMax);
+            
+            // Reflect velocity with some energy loss
+            float restitution = 0.3;  // Bounce factor
+            float velDotNormal = dot(p.velocity, normal);
+            
+            if (velDotNormal < 0.0) {
+                // Only reflect if moving into the surface
+                p.velocity = p.velocity - (1.0 + restitution) * velDotNormal * normal;
+                
+                // Add some turbulence after collision
+                float turbulence = 0.1;
+                p.velocity.y += (fract(sin(float(idx) * 12.9898) * 43758.5453) - 0.5) * turbulence;
+                p.velocity.z += (fract(sin(float(idx) * 78.233) * 43758.5453) - 0.5) * turbulence;
+            }
+        }
+    }
+    
+    // Decrease lifetime
     p.life -= 0.01 * dt;
     
-    // Reset particles that exit right or expire
+    // Reset particles that exit right side or expire
     if (p.life <= 0.0 || p.position.x > 4.0) {
+        // Respawn at left side
         p.position = vec3(-4.0, 
                          (fract(sin(float(idx) * 43758.5453)) - 0.5) * 3.0, 
                          (fract(sin(float(idx) * 12345.6789)) - 0.5) * 3.0);
-        p.velocity = vec3(0.5, 0.0, 0.0);
+        p.velocity = vec3(0.5 + fract(sin(float(idx) * 9876.54321)) * 0.2, 0.0, 0.0);
         p.life = 1.0;
+    }
+    
+    // Boundary constraints (keep particles in view)
+    if (p.position.y < -2.0 || p.position.y > 2.0) {
+        p.velocity.y *= -0.5;
+        p.position.y = clamp(p.position.y, -2.0, 2.0);
+    }
+    if (p.position.z < -2.0 || p.position.z > 2.0) {
+        p.velocity.z *= -0.5;
+        p.position.z = clamp(p.position.z, -2.0, 2.0);
     }
     
     particles[idx] = p;

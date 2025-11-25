@@ -196,5 +196,4 @@ CMakeFiles/3d_fluid_simulation_car.dir/src/particle_system.c.o: \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/../obj-file-loader/lib/model_loader.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/config.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/fluid_cube.h \
- /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/config.h \
- /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include/omp.h
+ /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/config.h

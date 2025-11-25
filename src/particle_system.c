@@ -4,8 +4,14 @@
 
 #include <stdlib.h>
 #include <math.h>
-#include <omp.h>  // For parallelization
-#include <immintrin.h>  // For AVX intrinsics
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#ifdef __AVX__
+#include <immintrin.h>
+#endif
 
 // Initialize the particle system
 void ParticleSystem_Init(ParticleSystem* system) {
@@ -24,10 +30,11 @@ void ParticleSystem_AddParticle(ParticleSystem* system, float x, float y, float 
         p->x = x;
         p->y = y;
         p->z = z;
+        p->padding1 = 0.0f;
         p->vx = vx;
         p->vy = vy;
         p->vz = vz;
-        p->life = 1.0f;  // Start with full lifetime
+        p->life = 1.0f;
 
         // Add particle to the grid
         int gridX = (int)(x / GRID_CELL_SIZE);
@@ -41,13 +48,62 @@ void ParticleSystem_AddParticle(ParticleSystem* system, float x, float y, float 
     }
 }
 
-void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
+// Check if a point is inside collision bounds (AABB)
+int ParticleSystem_CheckCollision(float x, float y, float z, CollisionBounds* bounds) {
+    return (x >= bounds->minX && x <= bounds->maxX &&
+            y >= bounds->minY && y <= bounds->maxY &&
+            z >= bounds->minZ && z <= bounds->maxZ);
+}
+
+// Resolve collision - push particle out and reflect velocity
+void ParticleSystem_ResolveCollision(Particle* p, CollisionBounds* bounds) {
+    float halfSizeX = (bounds->maxX - bounds->minX) * 0.5f;
+    float halfSizeY = (bounds->maxY - bounds->minY) * 0.5f;
+    float halfSizeZ = (bounds->maxZ - bounds->minZ) * 0.5f;
+    
+    float toParticleX = p->x - bounds->centerX;
+    float toParticleY = p->y - bounds->centerY;
+    float toParticleZ = p->z - bounds->centerZ;
+    
+    // Find penetration depth for each axis
+    float penX = halfSizeX - fabsf(toParticleX);
+    float penY = halfSizeY - fabsf(toParticleY);
+    float penZ = halfSizeZ - fabsf(toParticleZ);
+    
+    // Find the collision normal (axis with minimum penetration)
+    float normalX = 0.0f, normalY = 0.0f, normalZ = 0.0f;
+    
+    if (penX < penY && penX < penZ) {
+        normalX = (toParticleX > 0) ? 1.0f : -1.0f;
+        p->x = bounds->centerX + normalX * (halfSizeX + 0.01f);
+    } else if (penY < penZ) {
+        normalY = (toParticleY > 0) ? 1.0f : -1.0f;
+        p->y = bounds->centerY + normalY * (halfSizeY + 0.01f);
+    } else {
+        normalZ = (toParticleZ > 0) ? 1.0f : -1.0f;
+        p->z = bounds->centerZ + normalZ * (halfSizeZ + 0.01f);
+    }
+    
+    // Reflect velocity with energy loss
+    float restitution = 0.3f;
+    float velDotNormal = p->vx * normalX + p->vy * normalY + p->vz * normalZ;
+    
+    if (velDotNormal < 0.0f) {
+        p->vx -= (1.0f + restitution) * velDotNormal * normalX;
+        p->vy -= (1.0f + restitution) * velDotNormal * normalY;
+        p->vz -= (1.0f + restitution) * velDotNormal * normalZ;
+        
+        // Add turbulence
+        p->vy += ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+        p->vz += ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+    }
+}
+
+// Update with collision detection (CPU fallback)
+void ParticleSystem_UpdateWithCollision(ParticleSystem* system, FluidCube* fluid, float dt, CollisionBounds* bounds) {
     int sizeX = fluid->sizeX;
     int sizeY = fluid->sizeY;
     int sizeZ = fluid->sizeZ;
-    float* Vx = fluid->Vx;
-    float* Vy = fluid->Vy;
-    float* Vz = fluid->Vz;
 
     // Clear the grid
     for (int i = 0; i < GRID_CELL_SIZE; i++) {
@@ -56,65 +112,70 @@ void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
         }
     }
 
-    // Update particles and reinsert them into the grid
+    // Update particles
+    #ifdef _OPENMP
     #pragma omp parallel for
-    for (int i = 0; i < system->numParticles; i += 8) {
-#ifdef __AVX__
-        __m256 p_x = _mm256_loadu_ps(&system->particles[i].x);
-        __m256 p_y = _mm256_loadu_ps(&system->particles[i].y);
-        __m256 p_z = _mm256_loadu_ps(&system->particles[i].z);
-        __m256 p_vx = _mm256_loadu_ps(&system->particles[i].vx);
-        __m256 p_vy = _mm256_loadu_ps(&system->particles[i].vy);
-        __m256 p_vz = _mm256_loadu_ps(&system->particles[i].vz);
-        __m256 p_life = _mm256_loadu_ps(&system->particles[i].life);
+    #endif
+    for (int i = 0; i < system->numParticles; i++) {
+        Particle* p = &system->particles[i];
+        
+        // Update position
+        p->x += p->vx * dt;
+        p->y += p->vy * dt;
+        p->z += p->vz * dt;
+        
+        // Check collision with car bounds
+        if (bounds && ParticleSystem_CheckCollision(p->x, p->y, p->z, bounds)) {
+            ParticleSystem_ResolveCollision(p, bounds);
+        }
+        
+        // Decrease lifetime
+        p->life -= 0.01f * dt;
+        
+        // Reset expired particles (wind tunnel style)
+        if (p->life <= 0.0f || p->x > 4.0f) {
+            p->x = -4.0f;
+            p->y = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
+            p->z = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
+            p->vx = 0.5f + ((float)rand() / RAND_MAX) * 0.2f;
+            p->vy = 0.0f;
+            p->vz = 0.0f;
+            p->life = 1.0f;
+        }
+        
+        // Boundary constraints
+        if (p->y < -2.0f || p->y > 2.0f) {
+            p->vy *= -0.5f;
+            p->y = (p->y < -2.0f) ? -2.0f : 2.0f;
+        }
+        if (p->z < -2.0f || p->z > 2.0f) {
+            p->vz *= -0.5f;
+            p->z = (p->z < -2.0f) ? -2.0f : 2.0f;
+        }
+    }
 
-        // Update particle positions and velocities (SIMD version)
-        p_x = _mm256_add_ps(p_x, _mm256_mul_ps(p_vx, _mm256_set1_ps(dt)));
-        p_y = _mm256_add_ps(p_y, _mm256_mul_ps(p_vy, _mm256_set1_ps(dt)));
-        p_z = _mm256_add_ps(p_z, _mm256_mul_ps(p_vz, _mm256_set1_ps(dt)));
-        p_life = _mm256_sub_ps(p_life, _mm256_set1_ps(0.01f * dt));
-
-        // Store updated values
-        _mm256_storeu_ps(&system->particles[i].x, p_x);
-        _mm256_storeu_ps(&system->particles[i].y, p_y);
-        _mm256_storeu_ps(&system->particles[i].z, p_z);
-        _mm256_storeu_ps(&system->particles[i].life, p_life);
-
-        // Reinsert particles into the grid (non-SIMD)
-        for (int j = 0; j < 8; j++) {
-            Particle* p = &system->particles[i + j];
-            int gridX = (int)(p->x / GRID_CELL_SIZE);
-            int gridY = (int)(p->y / GRID_CELL_SIZE);
-            if (gridX >= 0 && gridX < GRID_CELL_SIZE && gridY >= 0 && gridY < GRID_CELL_SIZE) {
-                GridCell* cell = &system->grid[gridX][gridY];
-                if (cell->count < MAX_PARTICLES / GRID_CELL_SIZE) {
-                    cell->particles[cell->count++] = *p;
-                }
+    // Reinsert particles into grid
+    for (int i = 0; i < system->numParticles; i++) {
+        Particle* p = &system->particles[i];
+        int gridX = (int)((p->x + 4.0f) / 8.0f * GRID_CELL_SIZE);
+        int gridY = (int)((p->y + 2.0f) / 4.0f * GRID_CELL_SIZE);
+        
+        if (gridX >= 0 && gridX < GRID_CELL_SIZE && gridY >= 0 && gridY < GRID_CELL_SIZE) {
+            GridCell* cell = &system->grid[gridX][gridY];
+            if (cell->count < MAX_PARTICLES / GRID_CELL_SIZE) {
+                cell->particles[cell->count++] = *p;
             }
         }
-#else
-        for (int j = 0; j < 8; j++) {
-            Particle* p = &system->particles[i + j];
-            p->x += p->vx * dt;
-            p->y += p->vy * dt;
-            p->z += p->vz * dt;
-            p->life -= 0.01f * dt;
-
-            int gridX = (int)(p->x / GRID_CELL_SIZE);
-            int gridY = (int)(p->y / GRID_CELL_SIZE);
-            if (gridX >= 0 && gridX < GRID_CELL_SIZE && gridY >= 0 && gridY < GRID_CELL_SIZE) {
-                GridCell* cell = &system->grid[gridX][gridY];
-                if (cell->count < MAX_PARTICLES / GRID_CELL_SIZE) {
-                    cell->particles[cell->count++] = *p;
-                }
-            }
-        }
-#endif
     }
 }
 
+void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt) {
+    // Call the collision version with NULL bounds (no collision)
+    ParticleSystem_UpdateWithCollision(system, fluid, dt, NULL);
+}
+
 void ParticleSystem_Render(ParticleSystem* system, SDL_Renderer* renderer, int scale) {
-    // Set particle color once (white with alpha based on lifetime)
+    // Set particle color with alpha blending
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     for (int i = 0; i < GRID_CELL_SIZE; i++) {

@@ -3,35 +3,48 @@
 
 #include <SDL2/SDL.h>
 #include "fluid_cube.h"
-#include "config.h"
+#include "config.h"  // MAX_PARTICLES is defined here
 
-#define MAX_PARTICLES 10000 // Maximum number of particles
-#define GRID_CELL_SIZE 10 // Size of each grid cell
+#define GRID_CELL_SIZE 10   // Size of each grid cell
 
-// Particle structure
+// Particle structure - MUST match GPU shader struct layout (std430)
+// The struct has padding to align with GPU memory layout
 typedef struct {
-  float x, y, z;    // Position
-  float vx, vy, vz; // Velocity
-  float life;       // Lifetime (0.0 to 1.0)
+    float x, y, z;    // Position (vec3)
+    float padding1;   // Padding for 16-byte alignment
+    float vx, vy, vz; // Velocity (vec3)
+    float life;       // Lifetime (0.0 to 1.0)
 } Particle;
 
-// Grid cell structure
+// Grid cell structure for spatial partitioning (CPU-side optimization)
 typedef struct {
-  Particle particles[MAX_PARTICLES / GRID_CELL_SIZE]; // Particles in this cell
-  int count; // Number of particles in this cell
+    Particle particles[MAX_PARTICLES / GRID_CELL_SIZE];
+    int count;
 } GridCell;
 
 // Particle system structure
 typedef struct {
-  Particle particles[MAX_PARTICLES]; // Array of particles
-  int numParticles; // Current number of particles
-  GridCell grid[GRID_CELL_SIZE][GRID_CELL_SIZE]; // Grid for spatial partitioning
+    Particle particles[MAX_PARTICLES];
+    int numParticles;
+    GridCell grid[GRID_CELL_SIZE][GRID_CELL_SIZE];
 } ParticleSystem;
+
+// Car collision bounds (for CPU fallback)
+typedef struct {
+    float minX, minY, minZ;
+    float maxX, maxY, maxZ;
+    float centerX, centerY, centerZ;
+} CollisionBounds;
 
 // Function Declarations
 void ParticleSystem_Init(ParticleSystem* system);
 void ParticleSystem_AddParticle(ParticleSystem* system, float x, float y, float z, float vx, float vy, float vz);
 void ParticleSystem_Update(ParticleSystem* system, FluidCube* fluid, float dt);
+void ParticleSystem_UpdateWithCollision(ParticleSystem* system, FluidCube* fluid, float dt, CollisionBounds* bounds);
 void ParticleSystem_Render(ParticleSystem* system, SDL_Renderer* renderer, int scale);
+
+// Collision detection helpers
+int ParticleSystem_CheckCollision(float x, float y, float z, CollisionBounds* bounds);
+void ParticleSystem_ResolveCollision(Particle* p, CollisionBounds* bounds);
 
 #endif //PARTICLE_SYSTEM_H
