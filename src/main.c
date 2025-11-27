@@ -55,6 +55,21 @@ int mouseDown = 0;
 int lastMouseX = 0;
 int lastMouseY = 0;
 
+// Visualization mode
+int visualizationMode = 1;  // Default to velocity magnitude
+float maxSpeed = 2.0f;      // For normalizing velocity colors
+
+const char* vizModeNames[] = {
+    "Depth",
+    "Velocity Magnitude",
+    "Velocity Direction",
+    "Particle Lifetime",
+    "Turbulence/Pressure",
+    "Flow Progress",
+    "Vorticity"
+};
+const int numVizModes = 7;
+
 // Car bounding box structure
 typedef struct {
     float minX, minY, minZ;
@@ -69,7 +84,7 @@ typedef struct {
     float v2x, v2y, v2z, pad2;
 } GPUTriangle;
 
-// Computes model bounds on a togglable definition of the model for better performance
+// Computes model bounds
 CarBounds computeModelBounds(Model* model, float scale, float offsetX, float offsetY, float offsetZ, float rotationY) {
     CarBounds bounds;
     
@@ -88,7 +103,6 @@ CarBounds computeModelBounds(Model* model, float scale, float offsetX, float off
     bounds.minX = bounds.minY = bounds.minZ = FLT_MAX;
     bounds.maxX = bounds.maxY = bounds.maxZ = -FLT_MAX;
     
-    // Use vertices directly (not through faces)
     for (int i = 0; i < model->vertexCount; i++) {
         float x = model->vertices[i].x * scale + offsetX;
         float y = model->vertices[i].y * scale + offsetY;
@@ -146,12 +160,9 @@ GPUTriangle* createTriangleBuffer(Model* model, float scale, float offsetX, floa
         int idx1 = model->faces[i].v2 - 1;
         int idx2 = model->faces[i].v3 - 1;
         
-        // Validate indices
         if (idx0 < 0 || idx0 >= model->vertexCount ||
             idx1 < 0 || idx1 >= model->vertexCount ||
             idx2 < 0 || idx2 >= model->vertexCount) {
-            printf("Warning: Invalid face %d indices: %d, %d, %d (max: %d)\n", 
-                   i, idx0, idx1, idx2, model->vertexCount - 1);
             continue;
         }
         
@@ -250,7 +261,7 @@ void calculateViewMatrix(float* view, float angleY, float angleX, float distance
 }
 
 int main(int argc, char* argv[]) {
-    printf("Starting 3D Fluid Simulation...\n");
+    printf("Starting 3D Fluid Simulation with Visualization Modes...\n");
     srand(time(NULL));
     
     // Initialize SDL
@@ -267,7 +278,7 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     printf("Creating window...\n");
-    SDL_Window* window = SDL_CreateWindow("3D Fluid Simulation - Wind Tunnel with Collisions", 
+    SDL_Window* window = SDL_CreateWindow("3D Wind Tunnel - Press V to cycle visualization modes", 
                                         SDL_WINDOWPOS_CENTERED, 
                                         SDL_WINDOWPOS_CENTERED, 
                                         WIDTH, HEIGHT, 
@@ -309,6 +320,8 @@ int main(int argc, char* argv[]) {
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     checkGLError("After initial GL setup");
 
@@ -356,9 +369,15 @@ int main(int argc, char* argv[]) {
 
     checkGLError("After shader creation");
 
+    // Get uniform locations for particle shader
     glUseProgram(particleShaderProgram);
     GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
     GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
+    GLuint vizModeLoc = glGetUniformLocation(particleShaderProgram, "visualizationMode");
+    GLuint maxSpeedLoc = glGetUniformLocation(particleShaderProgram, "maxSpeed");
+    
+    printf("Shader uniform locations: projection=%d, view=%d, vizMode=%d, maxSpeed=%d\n",
+           projectionLoc, viewLoc, vizModeLoc, maxSpeedLoc);
     
     if (projectionLoc != -1) {
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, projection);
@@ -386,7 +405,7 @@ int main(int argc, char* argv[]) {
     float offsetX = 0.0f;
     float offsetY = -0.2f;
     float offsetZ = -0.9f;
-    float carRotationY = 90.0f;  // must be the same as render_model.c
+    float carRotationY = 90.0f;
     
     CarBounds carBounds = computeModelBounds(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY);
     
@@ -436,7 +455,7 @@ int main(int argc, char* argv[]) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
     checkGLError("After creating particle buffer");
 
-    // Create triangle buffer for per triangle collision
+    // Create triangle buffer for per-triangle collision
     printf("Creating triangle buffer...\n");
     int numTriangles = 0;
     GPUTriangle* triangleData = createTriangleBuffer(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY, &numTriangles);
@@ -450,14 +469,24 @@ int main(int argc, char* argv[]) {
         printf("Uploaded %d triangles to GPU\n", numTriangles);
     }
 
-    // Create VAO for particles
+    // Create VAO for particles with velocity and life attributes
     GLuint particleVAO;
     glGenVertexArrays(1, &particleVAO);
     glBindVertexArray(particleVAO);
     
     glBindBuffer(GL_ARRAY_BUFFER, particleBuffer);
+    
+    // Position attribute (location 0)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)0);
+    
+    // Velocity attribute (location 1) - offset by position (3 floats) + padding (1 float) = 16 bytes
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)(4 * sizeof(float)));
+    
+    // Life attribute (location 2) - offset by position + padding + velocity = 28 bytes
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)(7 * sizeof(float)));
     
     glBindVertexArray(0);
     checkGLError("After creating VAO");
@@ -469,19 +498,34 @@ int main(int argc, char* argv[]) {
         fluidCube = FluidCubeCreate(WIDTH / 10, HEIGHT / 10, 20, 0.001f, 0.0f, 0.001f, &carModel);
     }
 
+    printf("\n========================================\n");
     printf("Initialization complete. Starting main loop...\n");
-    printf("\nCONTROLS\n");
+    printf("========================================\n\n");
+    printf("CONTROLS\n");
+    printf("----------------------------------------\n");
     printf("Mouse drag:     Rotate camera\n");
     printf("Scroll wheel:   Zoom in/out\n");
     printf("A/D:            Rotate left/right\n");
     printf("W/S:            Rotate up/down\n");
-    printf("Q/E:            Zoom in/out\n");
+    printf("Q/E:            Zoom in/out (step)\n");
     printf("R:              Reset camera\n");
     printf("UP/DOWN:        Adjust wind speed\n");
+    printf("LEFT/RIGHT:     Adjust max speed scale\n");
+    printf("\nCOLLISION MODES:\n");
     printf("0:              Collision OFF\n");
     printf("1:              AABB collision (fast)\n");
     printf("2:              Per-triangle collision (accurate)\n");
-    printf("ESC:            Quit\n");
+    printf("\nVISUALIZATION MODES:\n");
+    printf("V:              Cycle visualization mode\n");
+    printf("3:              Depth coloring\n");
+    printf("4:              Velocity magnitude (jet colormap)\n");
+    printf("5:              Velocity direction (RGB)\n");
+    printf("6:              Particle lifetime\n");
+    printf("7:              Turbulence/pressure zones\n");
+    printf("8:              Flow progress\n");
+    printf("9:              Vorticity indicator\n");
+    printf("\nESC:            Quit\n");
+    printf("----------------------------------------\n\n");
 
     // Collision mode: 0=off, 1=AABB, 2=per-triangle
     int collisionMode = 1;
@@ -494,7 +538,7 @@ int main(int argc, char* argv[]) {
     while (running) {
         frameCount++;
         
-        glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
+        glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Handle events
@@ -540,6 +584,7 @@ int main(int argc, char* argv[]) {
                     case SDLK_ESCAPE:
                         running = 0;
                         break;
+                    // Collision modes
                     case SDLK_0:
                         collisionMode = 0;
                         printf("Collision: OFF\n");
@@ -552,6 +597,40 @@ int main(int argc, char* argv[]) {
                         collisionMode = 2;
                         printf("Collision: Per-Triangle (accurate) - %d triangles\n", numTriangles);
                         break;
+                    // Visualization modes
+                    case SDLK_3:
+                        visualizationMode = 0;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_4:
+                        visualizationMode = 1;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_5:
+                        visualizationMode = 2;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_6:
+                        visualizationMode = 3;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_7:
+                        visualizationMode = 4;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_8:
+                        visualizationMode = 5;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_9:
+                        visualizationMode = 6;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    case SDLK_v:
+                        visualizationMode = (visualizationMode + 1) % numVizModes;
+                        printf("Visualization: %s\n", vizModeNames[visualizationMode]);
+                        break;
+                    // Wind speed controls
                     case SDLK_UP:
                         windSpeed += 0.5f;
                         printf("Wind speed: %.1f\n", windSpeed);
@@ -561,6 +640,18 @@ int main(int argc, char* argv[]) {
                         if (windSpeed < 0.0f) windSpeed = 0.0f;
                         printf("Wind speed: %.1f\n", windSpeed);
                         break;
+                    // Max speed scale for visualization
+                    case SDLK_LEFT:
+                        maxSpeed -= 0.2f;
+                        if (maxSpeed < 0.2f) maxSpeed = 0.2f;
+                        printf("Max speed scale: %.1f\n", maxSpeed);
+                        break;
+                    case SDLK_RIGHT:
+                        maxSpeed += 0.2f;
+                        if (maxSpeed > 10.0f) maxSpeed = 10.0f;
+                        printf("Max speed scale: %.1f\n", maxSpeed);
+                        break;
+                    // Camera controls
                     case SDLK_a:
                         cameraAngleY -= 0.1f;
                         break;
@@ -609,7 +700,7 @@ int main(int argc, char* argv[]) {
         GLint windLoc = glGetUniformLocation(computeShaderProgram, "wind");
         
         if (dtLoc != -1) glUniform1f(dtLoc, deltaTime);
-        if (windLoc != -1) glUniform3f(windLoc, windSpeed * 0.01f, 0.0f, 0.0f);
+        if (windLoc != -1) glUniform3f(windLoc, windSpeed * 0.5f, 0.0f, 0.0f);
         
         if (carMinLoc != -1) {
             glUniform3f(carMinLoc, carBounds.minX, carBounds.minY, carBounds.minZ);
@@ -635,6 +726,13 @@ int main(int argc, char* argv[]) {
         if (viewLoc != -1) {
             glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
         }
+        if (vizModeLoc != -1) {
+            glUniform1i(vizModeLoc, visualizationMode);
+        }
+        if (maxSpeedLoc != -1) {
+            glUniform1f(maxSpeedLoc, maxSpeed);
+        }
+        
         glBindVertexArray(particleVAO);
         glDrawArrays(GL_POINTS, 0, GPU_PARTICLES);
         checkGLError("After rendering particles");
@@ -653,13 +751,15 @@ int main(int argc, char* argv[]) {
             checkGLError("After rendering model");
         }
 
-        // Debug output
+        // Debug output every 60 frames
         if (frameCount % 60 == 0) {
-            const char* modeNames[] = {"OFF", "AABB", "TRI"};
-            printf("Frame %d - FPS: %.1f - Collision: %s - Wind: %.1f\n", 
+            const char* collisionNames[] = {"OFF", "AABB", "TRI"};
+            printf("Frame %d | FPS: %.1f | Collision: %s | Viz: %s | Wind: %.1f | MaxSpd: %.1f\n", 
                    frameCount, 1.0f / deltaTime,
-                   modeNames[collisionMode],
-                   windSpeed);
+                   collisionNames[collisionMode],
+                   vizModeNames[visualizationMode],
+                   windSpeed,
+                   maxSpeed);
         }
 
         SDL_GL_SwapWindow(window);
