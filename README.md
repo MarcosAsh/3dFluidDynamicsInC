@@ -50,6 +50,11 @@ Assets are expected in `assets/` (e.g., `assets/3d-files/car-model.obj` and `ass
 - `2`: per-triangle collision (accurate)
 - `Esc`: quit
 
+## Visualization Modes
+   - `V`: Cycle through modes
+   - `3-9`: Select specific mode
+   - `LEFT/RIGHT`: Adjust color sensitivity
+   
 ## Project Layout
 - `src/`: simulation loop, particle system, rendering glue, and fluid grid implementation.
 - `shaders/`: compute and render shaders for particle updates and drawing.
