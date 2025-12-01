@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.16) 
 project(3d_fluid_simulation_car C)
 
 set(CMAKE_C_STANDARD 11)
