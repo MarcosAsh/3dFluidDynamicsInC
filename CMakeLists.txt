@@ -18,6 +18,7 @@ add_executable(3d_fluid_simulation_car
     src/render_model.c
     src/particle_system.c
     src/opengl_utils.c
+    src/lbm.c
 )
 
 # Link libraries
