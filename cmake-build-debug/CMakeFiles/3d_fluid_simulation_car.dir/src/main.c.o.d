@@ -194,7 +194,8 @@ CMakeFiles/3d_fluid_simulation_car.dir/src/main.c.o: \
  /usr/include/SDL2/SDL.h /usr/include/GL/glew.h /usr/include/GL/glu.h \
  /usr/include/GL/gl.h /usr/include/time.h /usr/include/bits/time.h \
  /usr/include/bits/types/struct_tm.h \
- /usr/include/bits/types/struct_itimerspec.h \
+ /usr/include/bits/types/struct_itimerspec.h /usr/include/getopt.h \
+ /usr/include/bits/getopt_core.h /usr/include/bits/getopt_ext.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/fluid_cube.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/../obj-file-loader/lib/model_loader.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/particle_system.h \

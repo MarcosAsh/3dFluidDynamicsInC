@@ -7,6 +7,8 @@
 #include <time.h>
 #include <math.h>
 #include <float.h>
+#include <getopt.h>
+#include <string.h>
 
 #include "../lib/fluid_cube.h"
 #include "../lib/particle_system.h"
@@ -260,10 +262,98 @@ void calculateViewMatrix(float* view, float angleY, float angleX, float distance
     view[15] = 1.0f;
 }
 
+void saveFrameToPPM(const char* filename, int width, int height) {
+    unsigned char* pixels = (unsigned char*)malloc(width * height * 3);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+    
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        printf("Error: Could not open %s for writing\n", filename);
+        free(pixels);
+        return;
+    }
+    
+    fprintf(f, "P6\n%d %d\n255\n", width, height);
+    
+    // Flip vertically (OpenGL origin is bottom-left)
+    for (int y = height - 1; y >= 0; y--) {
+        fwrite(pixels + y * width * 3, 1, width * 3, f);
+    }
+    
+    fclose(f);
+    free(pixels);
+}
+
 int main(int argc, char* argv[]) {
-    printf("Starting 3D Fluid Simulation with Visualization Modes...\n");
+    printf("Starting 3D Fluid Simulation...\n");
     srand(time(NULL));
     
+    // Parse command line arguments
+    float windSpeed = 1.0f;
+    int visualizationMode = 1;
+    int collisionMode = 1;
+    int renderDuration = 0;        // 0 = interactive mode, >0 = headless render
+    char outputPath[256] = "";
+    
+    static struct option long_options[] = {
+        {"wind", required_argument, 0, 'w'},
+        {"viz", required_argument, 0, 'v'},
+        {"collision", required_argument, 0, 'c'},
+        {"duration", required_argument, 0, 'd'},
+        {"output", required_argument, 0, 'o'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    int opt;
+    while ((opt = getopt_long(argc, argv, "w:v:c:d:o:h", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'w':
+                windSpeed = atof(optarg);
+                if (windSpeed < 0) windSpeed = 0;
+                if (windSpeed > 5) windSpeed = 5;
+                break;
+            case 'v':
+                visualizationMode = atoi(optarg);
+                if (visualizationMode < 0) visualizationMode = 0;
+                if (visualizationMode > 6) visualizationMode = 6;
+                break;
+            case 'c':
+                collisionMode = atoi(optarg);
+                if (collisionMode < 0) collisionMode = 0;
+                if (collisionMode > 2) collisionMode = 2;
+                break;
+            case 'd':
+                renderDuration = atoi(optarg);
+                if (renderDuration < 0) renderDuration = 0;
+                break;
+            case 'o':
+                strncpy(outputPath, optarg, 255);
+                break;
+            case 'h':
+            default:
+                printf("Usage: %s [options]\n", argv[0]);
+                printf("Options:\n");
+                printf("  -w, --wind=SPEED      Wind speed 0-5 (default: 1.0)\n");
+                printf("  -v, --viz=MODE        Visualization mode 0-6 (default: 1)\n");
+                printf("  -c, --collision=MODE  Collision 0=off, 1=AABB, 2=mesh (default: 1)\n");
+                printf("  -d, --duration=SECS   Render duration (0=interactive, default: 0)\n");
+                printf("  -o, --output=PATH     Output directory for frames\n");
+                printf("  -h, --help            Show this help\n");
+                return 0;
+        }
+    }
+    
+    printf("Configuration:\n");
+    printf("  Wind Speed: %.1f m/s\n", windSpeed);
+    printf("  Visualization: %d\n", visualizationMode);
+    printf("  Collision: %d\n", collisionMode);
+    if (renderDuration > 0) {
+        printf("  Render Mode: %d seconds to %s\n", renderDuration, outputPath);
+    } else {
+        printf("  Mode: Interactive\n");
+    }
+
     // Initialize SDL
     printf("Initializing SDL...\n");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -527,13 +617,12 @@ int main(int argc, char* argv[]) {
     printf("\nESC:            Quit\n");
     printf("----------------------------------------\n\n");
 
-    // Collision mode: 0=off, 1=AABB, 2=per-triangle
-    int collisionMode = 1;
 
     // Main loop
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();
     int frameCount = 0;
+    int maxFrames = (renderDuration > 0) ? renderDuration * 60 : 0;  // 60 FPS
     
     while (running) {
         frameCount++;
@@ -760,6 +849,19 @@ int main(int argc, char* argv[]) {
                    vizModeNames[visualizationMode],
                    windSpeed,
                    maxSpeed);
+        }
+
+        // Check if we've rendered enough frames (headless mode)
+        if (maxFrames > 0 && frameCount >= maxFrames) {
+            printf("Render complete: %d frames\n", frameCount);
+            running = 0;
+        }
+        
+        // Save frames in headless mode
+        if (renderDuration > 0 && strlen(outputPath) > 0) {
+            char framePath[512];
+            snprintf(framePath, sizeof(framePath), "%s/frame_%05d.ppm", outputPath, frameCount);
+            saveFrameToPPM(framePath, WIDTH, HEIGHT);  // You'll need this function
         }
 
         SDL_GL_SwapWindow(window);
