@@ -825,25 +825,18 @@ int main(int argc, char* argv[]) {
             checkGLError("After rendering model");
         }
 
-        // Debug output
-        if (frameCount % 60 == 0) {
-            const char* collisionNames[] = {"OFF", "AABB", "TRI"};
-            printf("Frame %d | FPS: %.1f | Collision: %s | Viz: %s | Wind: %.1f | LBM: %s\n", 
-                   frameCount, 1.0f / deltaTime,
-                   collisionNames[collisionMode],
-                   vizModeNames[visualizationMode],
-                   windSpeed,
-                   (useLBM && lbmGrid) ? "ON" : "OFF");
+        // Compute and display drag coefficient every 60 frames
+        if (frameCount % 60 == 0 && lbmGrid && useLBM) {
+            float fx, fy, fz;
+            LBM_ComputeDragForce(lbmGrid, &fx, &fy, &fz);
             
-            if (lbmGrid && useLBM) {
-                float testVel[4];
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, LBM_GetVelocityBuffer(lbmGrid));
-                glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(testVel), testVel);
-                printf("  LBM vel[0]: (%.4f, %.4f, %.4f) rho=%.4f\n", 
-                       testVel[0], testVel[1], testVel[2], testVel[3]);
-            }
+            // Reference area ~ car frontal area in grid units
+            float refArea = (carBounds.maxY - carBounds.minY) * (carBounds.maxZ - carBounds.minZ);
+            float Cd = LBM_ComputeDragCoefficient(lbmGrid, windSpeed * 0.05f, refArea);
+            
+            printf("  Drag Force: (%.4f, %.4f, %.4f), Cd=%.3f\n", fx, fy, fz, Cd);
         }
-
+        
         if (maxFrames > 0 && frameCount >= maxFrames) {
             printf("Render complete: %d frames\n", frameCount);
             running = 0;

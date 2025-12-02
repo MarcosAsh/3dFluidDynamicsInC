@@ -7,7 +7,7 @@
 
 // D3Q19 weights for initialization
 static const float w[19] = {
-    1.0f/3.0f,   // rest
+    1.0f/3.0f,
     1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f,
     1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f,
     1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f,
@@ -35,11 +35,8 @@ LBMGrid* LBM_Create(int sizeX, int sizeY, int sizeZ, float viscosity) {
     grid->sizeZ = sizeZ;
     grid->totalCells = sizeX * sizeY * sizeZ;
     
-    // tau = 0.5 + 3 * viscosity (lattice units)
-    // For air: kinematic viscosity ~ 1.5e-5 m²/s
-    // In lattice units with dx=1, dt=1: nu = viscosity
     grid->tau = 0.5f + 3.0f * viscosity;
-    if (grid->tau < 0.51f) grid->tau = 0.51f;  // Stability
+    if (grid->tau < 0.51f) grid->tau = 0.51f;
     if (grid->tau > 2.0f) grid->tau = 2.0f;
     
     printf("LBM Grid: %dx%dx%d (%d cells), tau=%.3f\n", 
@@ -49,6 +46,7 @@ LBMGrid* LBM_Create(int sizeX, int sizeY, int sizeZ, float viscosity) {
     size_t fSize = 19 * grid->totalCells * sizeof(float);
     size_t velSize = grid->totalCells * 4 * sizeof(float);
     size_t solidSize = grid->totalCells * sizeof(int);
+    size_t forceSize = 4 * sizeof(int);  // forceX, forceY, forceZ, count (as ints)
     
     glGenBuffers(1, &grid->fBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->fBuffer);
@@ -66,19 +64,29 @@ LBMGrid* LBM_Create(int sizeX, int sizeY, int sizeZ, float viscosity) {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->solidBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, solidSize, NULL, GL_DYNAMIC_DRAW);
     
+    glGenBuffers(1, &grid->forceBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->forceBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, forceSize, NULL, GL_DYNAMIC_DRAW);
+    
     // Initialize solid mask to all fluid
     int* solidData = (int*)calloc(grid->totalCells, sizeof(int));
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->solidBuffer);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, solidSize, solidData);
     free(solidData);
     
     // Load shaders
     grid->collideShader = createComputeShader("shaders/lbm_collide.comp");
     grid->streamShader = createComputeShader("shaders/lbm_stream.comp");
+    grid->forceShader = createComputeShader("shaders/lbm_force.comp");
     
     if (!grid->collideShader || !grid->streamShader) {
         printf("Failed to create LBM shaders!\n");
         LBM_Free(grid);
         return NULL;
+    }
+    
+    if (!grid->forceShader) {
+        printf("Warning: Force shader not loaded, drag calculation disabled\n");
     }
     
     // Get uniform locations
@@ -89,6 +97,11 @@ LBMGrid* LBM_Create(int sizeX, int sizeY, int sizeZ, float viscosity) {
     
     glUseProgram(grid->streamShader);
     grid->stream_gridSizeLoc = glGetUniformLocation(grid->streamShader, "gridSize");
+    
+    if (grid->forceShader) {
+        glUseProgram(grid->forceShader);
+        grid->force_gridSizeLoc = glGetUniformLocation(grid->forceShader, "gridSize");
+    }
     
     printf("LBM initialized successfully\n");
     return grid;
@@ -101,16 +114,16 @@ void LBM_Free(LBMGrid* grid) {
     if (grid->fNewBuffer) glDeleteBuffers(1, &grid->fNewBuffer);
     if (grid->velocityBuffer) glDeleteBuffers(1, &grid->velocityBuffer);
     if (grid->solidBuffer) glDeleteBuffers(1, &grid->solidBuffer);
+    if (grid->forceBuffer) glDeleteBuffers(1, &grid->forceBuffer);
     if (grid->collideShader) glDeleteProgram(grid->collideShader);
     if (grid->streamShader) glDeleteProgram(grid->streamShader);
+    if (grid->forceShader) glDeleteProgram(grid->forceShader);
     
     free(grid);
 }
 
 void LBM_SetSolidAABB(LBMGrid* grid, float minX, float minY, float minZ,
                       float maxX, float maxY, float maxZ) {
-    // Convert world coords to grid coords
-    // Assume grid spans [-4, 4] in x, [-2, 2] in y and z
     float scaleX = grid->sizeX / 8.0f;
     float scaleY = grid->sizeY / 4.0f;
     float scaleZ = grid->sizeZ / 4.0f;
@@ -122,7 +135,6 @@ void LBM_SetSolidAABB(LBMGrid* grid, float minX, float minY, float minZ,
     int gMinZ = (int)((minZ + 2.0f) * scaleZ);
     int gMaxZ = (int)((maxZ + 2.0f) * scaleZ);
     
-    // Clamp to grid
     if (gMinX < 0) gMinX = 0;
     if (gMaxX >= grid->sizeX) gMaxX = grid->sizeX - 1;
     if (gMinY < 0) gMinY = 0;
@@ -133,7 +145,6 @@ void LBM_SetSolidAABB(LBMGrid* grid, float minX, float minY, float minZ,
     printf("LBM solid AABB: grid [%d-%d, %d-%d, %d-%d]\n",
            gMinX, gMaxX, gMinY, gMaxY, gMinZ, gMaxZ);
     
-    // Update solid mask
     int* solidData = (int*)calloc(grid->totalCells, sizeof(int));
     
     for (int z = gMinZ; z <= gMaxZ; z++) {
@@ -153,7 +164,6 @@ void LBM_SetSolidAABB(LBMGrid* grid, float minX, float minY, float minZ,
 void LBM_InitializeFlow(LBMGrid* grid, float ux, float uy, float uz) {
     float rho = 1.0f;
     
-    // Initialize distribution functions to equilibrium
     float* fData = (float*)malloc(19 * grid->totalCells * sizeof(float));
     float* velData = (float*)malloc(4 * grid->totalCells * sizeof(float));
     
@@ -183,7 +193,6 @@ void LBM_InitializeFlow(LBMGrid* grid, float ux, float uy, float uz) {
 }
 
 void LBM_Step(LBMGrid* grid, float inletVelX, float inletVelY, float inletVelZ) {
-    // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, grid->fBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, grid->fNewBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, grid->velocityBuffer);
@@ -211,12 +220,55 @@ GLuint LBM_GetVelocityBuffer(LBMGrid* grid) {
 }
 
 void LBM_ComputeDragForce(LBMGrid* grid, float* forceX, float* forceY, float* forceZ) {
-    // Momentum exchange method - would need another compute shader
-    // For now, return placeholder
     *forceX = 0.0f;
     *forceY = 0.0f;
     *forceZ = 0.0f;
     
-    // TODO: Implement momentum exchange on GPU
-    // Sum forces at solid boundaries
+    if (!grid->forceShader) return;
+    
+    // Clear force buffer
+    int zeros[4] = {0, 0, 0, 0};
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->forceBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(zeros), zeros);
+    
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, grid->fBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, grid->solidBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, grid->forceBuffer);
+    
+    // Run force computation
+    glUseProgram(grid->forceShader);
+    glUniform3i(grid->force_gridSizeLoc, grid->sizeX, grid->sizeY, grid->sizeZ);
+    
+    glDispatchCompute((grid->sizeX + 7) / 8, (grid->sizeY + 7) / 8, (grid->sizeZ + 7) / 8);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Read back results
+    int results[4];
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->forceBuffer);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(results), results);
+    
+    // Convert back from int (scaled by 10000)
+    *forceX = results[0] / 10000.0f;
+    *forceY = results[1] / 10000.0f;
+    *forceZ = results[2] / 10000.0f;
+}
+
+float LBM_ComputeDragCoefficient(LBMGrid* grid, float inletVelocity, float refArea) {
+    float fx, fy, fz;
+    LBM_ComputeDragForce(grid, &fx, &fy, &fz);
+    
+    // Drag force is in x direction (streamwise)
+    float dragForce = fabsf(fx);
+    
+    // Cd = F / (0.5 * rho * U^2 * A)
+    // In lattice units, rho = 1
+    float rho = 1.0f;
+    float dynamicPressure = 0.5f * rho * inletVelocity * inletVelocity;
+    
+    if (dynamicPressure * refArea < 1e-10f) return 0.0f;
+    
+    float Cd = dragForce / (dynamicPressure * refArea);
+    
+    return Cd;
 }
