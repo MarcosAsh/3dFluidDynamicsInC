@@ -8,6 +8,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/3d_fluid_simulation_car.dir/src/coloring.c.o.d"
   "CMakeFiles/3d_fluid_simulation_car.dir/src/fluid_cube.c.o"
   "CMakeFiles/3d_fluid_simulation_car.dir/src/fluid_cube.c.o.d"
+  "CMakeFiles/3d_fluid_simulation_car.dir/src/lbm.c.o"
+  "CMakeFiles/3d_fluid_simulation_car.dir/src/lbm.c.o.d"
   "CMakeFiles/3d_fluid_simulation_car.dir/src/main.c.o"
   "CMakeFiles/3d_fluid_simulation_car.dir/src/main.c.o.d"
   "CMakeFiles/3d_fluid_simulation_car.dir/src/opengl_utils.c.o"

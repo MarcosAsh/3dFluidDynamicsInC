@@ -10,27 +10,13 @@
 #include <getopt.h>
 #include <string.h>
 
+#include "../lib/lbm.h"
 #include "../lib/fluid_cube.h"
 #include "../lib/particle_system.h"
 #include "../obj-file-loader/lib/model_loader.h"
 #include "../lib/render_model.h"
 #include "../lib/opengl_utils.h"
 
-#ifndef WIDTH
-#define WIDTH 1920
-#endif
-
-#ifndef HEIGHT
-#define HEIGHT 1080
-#endif
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#ifndef SCALE
-#define SCALE 5
-#endif
 
 #define GPU_PARTICLES MAX_PARTICLES
 
@@ -58,8 +44,13 @@ int lastMouseX = 0;
 int lastMouseY = 0;
 
 // Visualization mode
-int visualizationMode = 1;  // Default to velocity magnitude
-float maxSpeed = 2.0f;      // For normalizing velocity colors
+int visualizationMode = 1;
+float maxSpeed = 2.0f;
+
+// LBM settings
+int useLBM = 1;
+LBMGrid* lbmGrid = NULL;
+int lbmSubsteps = 5;
 
 const char* vizModeNames[] = {
     "Depth",
@@ -72,21 +63,18 @@ const char* vizModeNames[] = {
 };
 const int numVizModes = 7;
 
-// Car bounding box structure
 typedef struct {
     float minX, minY, minZ;
     float maxX, maxY, maxZ;
     float centerX, centerY, centerZ;
 } CarBounds;
 
-// GPU Triangle struct (must match shader)
 typedef struct {
     float v0x, v0y, v0z, pad0;
     float v1x, v1y, v1z, pad1;
     float v2x, v2y, v2z, pad2;
 } GPUTriangle;
 
-// Computes model bounds
 CarBounds computeModelBounds(Model* model, float scale, float offsetX, float offsetY, float offsetZ, float rotationY) {
     CarBounds bounds;
     
@@ -135,7 +123,6 @@ CarBounds computeModelBounds(Model* model, float scale, float offsetX, float off
     return bounds;
 }
 
-// Create triangle buffer for per-triangle collision
 GPUTriangle* createTriangleBuffer(Model* model, float scale, float offsetX, float offsetY, float offsetZ, float rotationY, int* outCount) {
     *outCount = 0;
     
@@ -204,7 +191,6 @@ GPUTriangle* createTriangleBuffer(Model* model, float scale, float offsetX, floa
     return tris;
 }
 
-// Function to check OpenGL errors
 void checkGLError(const char* label) {
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
@@ -212,7 +198,6 @@ void checkGLError(const char* label) {
     }
 }
 
-// Calculate view matrix from camera angles
 void calculateViewMatrix(float* view, float angleY, float angleX, float distance, 
                          float targetX, float targetY, float targetZ) {
     float eyeX = targetX + distance * sinf(angleY) * cosf(angleX);
@@ -275,7 +260,6 @@ void saveFrameToPPM(const char* filename, int width, int height) {
     
     fprintf(f, "P6\n%d %d\n255\n", width, height);
     
-    // Flip vertically (OpenGL origin is bottom-left)
     for (int y = height - 1; y >= 0; y--) {
         fwrite(pixels + y * width * 3, 1, width * 3, f);
     }
@@ -288,11 +272,10 @@ int main(int argc, char* argv[]) {
     printf("Starting 3D Fluid Simulation...\n");
     srand(time(NULL));
     
-    // Parse command line arguments
     float windSpeed = 1.0f;
     int visualizationMode = 1;
     int collisionMode = 1;
-    int renderDuration = 0;        // 0 = interactive mode, >0 = headless render
+    int renderDuration = 0;
     char outputPath[256] = "";
     
     static struct option long_options[] = {
@@ -354,7 +337,6 @@ int main(int argc, char* argv[]) {
         printf("  Mode: Interactive\n");
     }
 
-    // Initialize SDL
     printf("Initializing SDL...\n");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("SDL_Init Error: %s\n", SDL_GetError());
@@ -368,7 +350,7 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     printf("Creating window...\n");
-    SDL_Window* window = SDL_CreateWindow("3D Wind Tunnel - Press V to cycle visualization modes", 
+    SDL_Window* window = SDL_CreateWindow("3D Wind Tunnel - LBM Fluid Simulation", 
                                         SDL_WINDOWPOS_CENTERED, 
                                         SDL_WINDOWPOS_CENTERED, 
                                         WIDTH, HEIGHT, 
@@ -415,7 +397,6 @@ int main(int argc, char* argv[]) {
 
     checkGLError("After initial GL setup");
 
-    // Set up projection matrix
     float aspect = (float)WIDTH / HEIGHT;
     float fov = 45.0f;
     float near = 0.1f;
@@ -436,7 +417,6 @@ int main(int argc, char* argv[]) {
     calculateViewMatrix(view, cameraAngleY, cameraAngleX, cameraDistance,
                         cameraTargetX, cameraTargetY, cameraTargetZ);
 
-    // Load shaders
     printf("Loading shaders...\n");
     GLuint particleShaderProgram = createShaderProgram("shaders/particle.vert", "shaders/particle.frag");
     if (particleShaderProgram == 0) {
@@ -459,14 +439,13 @@ int main(int argc, char* argv[]) {
 
     checkGLError("After shader creation");
 
-    // Get uniform locations for particle shader
     glUseProgram(particleShaderProgram);
     GLuint projectionLoc = glGetUniformLocation(particleShaderProgram, "projection");
     GLuint viewLoc = glGetUniformLocation(particleShaderProgram, "view");
     GLuint vizModeLoc = glGetUniformLocation(particleShaderProgram, "visualizationMode");
     GLuint maxSpeedLoc = glGetUniformLocation(particleShaderProgram, "maxSpeed");
     
-    printf("Shader uniform locations: projection=%d, view=%d, vizMode=%d, maxSpeed=%d\n",
+    printf("Particle shader uniform locations: projection=%d, view=%d, vizMode=%d, maxSpeed=%d\n",
            projectionLoc, viewLoc, vizModeLoc, maxSpeedLoc);
     
     if (projectionLoc != -1) {
@@ -475,7 +454,6 @@ int main(int argc, char* argv[]) {
     
     checkGLError("After setting uniforms");
 
-    // Load car model
     printf("Loading car model...\n");
     Model carModel = loadOBJ("assets/3d-files/car-model.obj");
     
@@ -490,7 +468,6 @@ int main(int argc, char* argv[]) {
     
     printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
     
-    // Car transform parameters 
     float modelScale = 0.05f;
     float offsetX = 0.0f;
     float offsetY = -0.2f;
@@ -499,18 +476,44 @@ int main(int argc, char* argv[]) {
     
     CarBounds carBounds = computeModelBounds(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY);
     
-    // Get uniform locations for compute shader
+    // Initialize LBM grid
+    int lbmSizeX = 64;
+    int lbmSizeY = 32;
+    int lbmSizeZ = 32;
+    float lbmViscosity = 0.1f;
+    
+    printf("Initializing LBM grid...\n");
+    lbmGrid = LBM_Create(lbmSizeX, lbmSizeY, lbmSizeZ, lbmViscosity);
+    
+    if (lbmGrid) {
+        LBM_SetSolidAABB(lbmGrid, 
+                         carBounds.minX, carBounds.minY, carBounds.minZ,
+                         carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        LBM_InitializeFlow(lbmGrid, 0.1f, 0.0f, 0.0f);
+        printf("LBM initialized successfully\n");
+    } else {
+        printf("Warning: LBM initialization failed, using simple wind\n");
+        useLBM = 0;
+    }
+
+    // Get compute shader uniform locations
     glUseProgram(computeShaderProgram);
+    GLint dtLoc = glGetUniformLocation(computeShaderProgram, "dt");
+    GLint windLoc = glGetUniformLocation(computeShaderProgram, "wind");
     GLint carMinLoc = glGetUniformLocation(computeShaderProgram, "carMin");
     GLint carMaxLoc = glGetUniformLocation(computeShaderProgram, "carMax");
     GLint carCenterLoc = glGetUniformLocation(computeShaderProgram, "carCenter");
     GLint collisionModeLoc = glGetUniformLocation(computeShaderProgram, "collisionMode");
     GLint numTrianglesLoc = glGetUniformLocation(computeShaderProgram, "numTriangles");
+    GLint useLBMLoc = glGetUniformLocation(computeShaderProgram, "useLBM");
+    GLint lbmGridSizeLoc = glGetUniformLocation(computeShaderProgram, "lbmGridSize");
     
-    printf("Collision uniform locations: carMin=%d, carMax=%d, carCenter=%d, mode=%d, numTris=%d\n",
-           carMinLoc, carMaxLoc, carCenterLoc, collisionModeLoc, numTrianglesLoc);
+    printf("Compute shader uniform locations:\n");
+    printf("  dt=%d, wind=%d, carMin=%d, carMax=%d, carCenter=%d\n",
+           dtLoc, windLoc, carMinLoc, carMaxLoc, carCenterLoc);
+    printf("  collisionMode=%d, numTriangles=%d, useLBM=%d, lbmGridSize=%d\n",
+           collisionModeLoc, numTrianglesLoc, useLBMLoc, lbmGridSizeLoc);
 
-    // Allocate particles on heap
     printf("Allocating %d particles on heap...\n", GPU_PARTICLES);
     Particle* particles = (Particle*)malloc(GPU_PARTICLES * sizeof(Particle));
     if (!particles) {
@@ -524,7 +527,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Initialize particles
     for (int i = 0; i < GPU_PARTICLES; i++) {
         particles[i].x = -4.0f + ((float)rand() / RAND_MAX) * 0.5f;
         particles[i].y = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
@@ -536,7 +538,6 @@ int main(int argc, char* argv[]) {
         particles[i].life = 1.0f;
     }
 
-    // Create particle buffer
     printf("Creating particle buffer...\n");
     GLuint particleBuffer;
     glGenBuffers(1, &particleBuffer);
@@ -545,7 +546,6 @@ int main(int argc, char* argv[]) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
     checkGLError("After creating particle buffer");
 
-    // Create triangle buffer for per-triangle collision
     printf("Creating triangle buffer...\n");
     int numTriangles = 0;
     GPUTriangle* triangleData = createTriangleBuffer(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY, &numTriangles);
@@ -559,29 +559,24 @@ int main(int argc, char* argv[]) {
         printf("Uploaded %d triangles to GPU\n", numTriangles);
     }
 
-    // Create VAO for particles with velocity and life attributes
     GLuint particleVAO;
     glGenVertexArrays(1, &particleVAO);
     glBindVertexArray(particleVAO);
     
     glBindBuffer(GL_ARRAY_BUFFER, particleBuffer);
     
-    // Position attribute (location 0)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)0);
     
-    // Velocity attribute (location 1) - offset by position (3 floats) + padding (1 float) = 16 bytes
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)(4 * sizeof(float)));
     
-    // Life attribute (location 2) - offset by position + padding + velocity = 28 bytes
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)(7 * sizeof(float)));
     
     glBindVertexArray(0);
     checkGLError("After creating VAO");
 
-    // Initialize fluid simulation
     printf("Creating fluid cube...\n");
     FluidCube* fluidCube = NULL;
     if (carModel.vertexCount > 0) {
@@ -607,22 +602,15 @@ int main(int argc, char* argv[]) {
     printf("2:              Per-triangle collision (accurate)\n");
     printf("\nVISUALIZATION MODES:\n");
     printf("V:              Cycle visualization mode\n");
-    printf("3:              Depth coloring\n");
-    printf("4:              Velocity magnitude (jet colormap)\n");
-    printf("5:              Velocity direction (RGB)\n");
-    printf("6:              Particle lifetime\n");
-    printf("7:              Turbulence/pressure zones\n");
-    printf("8:              Flow progress\n");
-    printf("9:              Vorticity indicator\n");
-    printf("\nESC:            Quit\n");
+    printf("3-9:            Select specific mode\n");
+    printf("\nL:              Toggle LBM flow field\n");
+    printf("ESC:            Quit\n");
     printf("----------------------------------------\n\n");
 
-
-    // Main loop
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();
     int frameCount = 0;
-    int maxFrames = (renderDuration > 0) ? renderDuration * 60 : 0;  // 60 FPS
+    int maxFrames = (renderDuration > 0) ? renderDuration * 60 : 0;
     
     while (running) {
         frameCount++;
@@ -630,7 +618,6 @@ int main(int argc, char* argv[]) {
         glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Handle events
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -673,7 +660,6 @@ int main(int argc, char* argv[]) {
                     case SDLK_ESCAPE:
                         running = 0;
                         break;
-                    // Collision modes
                     case SDLK_0:
                         collisionMode = 0;
                         printf("Collision: OFF\n");
@@ -686,7 +672,6 @@ int main(int argc, char* argv[]) {
                         collisionMode = 2;
                         printf("Collision: Per-Triangle (accurate) - %d triangles\n", numTriangles);
                         break;
-                    // Visualization modes
                     case SDLK_3:
                         visualizationMode = 0;
                         printf("Visualization: %s\n", vizModeNames[visualizationMode]);
@@ -719,7 +704,6 @@ int main(int argc, char* argv[]) {
                         visualizationMode = (visualizationMode + 1) % numVizModes;
                         printf("Visualization: %s\n", vizModeNames[visualizationMode]);
                         break;
-                    // Wind speed controls
                     case SDLK_UP:
                         windSpeed += 0.5f;
                         printf("Wind speed: %.1f\n", windSpeed);
@@ -729,7 +713,6 @@ int main(int argc, char* argv[]) {
                         if (windSpeed < 0.0f) windSpeed = 0.0f;
                         printf("Wind speed: %.1f\n", windSpeed);
                         break;
-                    // Max speed scale for visualization
                     case SDLK_LEFT:
                         maxSpeed -= 0.2f;
                         if (maxSpeed < 0.2f) maxSpeed = 0.2f;
@@ -740,7 +723,6 @@ int main(int argc, char* argv[]) {
                         if (maxSpeed > 10.0f) maxSpeed = 10.0f;
                         printf("Max speed scale: %.1f\n", maxSpeed);
                         break;
-                    // Camera controls
                     case SDLK_a:
                         cameraAngleY -= 0.1f;
                         break;
@@ -769,58 +751,64 @@ int main(int argc, char* argv[]) {
                         cameraDistance = 6.0f;
                         printf("Camera reset\n");
                         break;
+                    case SDLK_l:
+                        useLBM = !useLBM;
+                        printf("LBM: %s\n", useLBM ? "ON" : "OFF");
+                        break;
                 }
             }
         }
 
-        // Update view matrix
         calculateViewMatrix(view, cameraAngleY, cameraAngleX, cameraDistance,
                             cameraTargetX, cameraTargetY, cameraTargetZ);
 
-        // Calculate delta time
         Uint32 currentTime = SDL_GetTicks();
         float deltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        // Update particles with compute shader
+        // Run LBM simulation FIRST
+        if (lbmGrid && useLBM) {
+            for (int i = 0; i < lbmSubsteps; i++) {
+                LBM_Step(lbmGrid, windSpeed * 0.05f, 0.0f, 0.0f);
+            }
+        }
+
+        // Now set up particle compute shader
         glUseProgram(computeShaderProgram);
         
-        GLint dtLoc = glGetUniformLocation(computeShaderProgram, "dt");
-        GLint windLoc = glGetUniformLocation(computeShaderProgram, "wind");
+        // Bind buffers
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, triangleBuffer);
         
+        // Bind LBM velocity buffer if using LBM
+        if (lbmGrid && useLBM) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, LBM_GetVelocityBuffer(lbmGrid));
+        }
+        
+        // Set uniforms
         if (dtLoc != -1) glUniform1f(dtLoc, deltaTime);
         if (windLoc != -1) glUniform3f(windLoc, windSpeed * 0.5f, 0.0f, 0.0f);
+        if (carMinLoc != -1) glUniform3f(carMinLoc, carBounds.minX, carBounds.minY, carBounds.minZ);
+        if (carMaxLoc != -1) glUniform3f(carMaxLoc, carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        if (carCenterLoc != -1) glUniform3f(carCenterLoc, carBounds.centerX, carBounds.centerY, carBounds.centerZ);
+        if (collisionModeLoc != -1) glUniform1i(collisionModeLoc, collisionMode);
+        if (numTrianglesLoc != -1) glUniform1i(numTrianglesLoc, numTriangles);
         
-        if (carMinLoc != -1) {
-            glUniform3f(carMinLoc, carBounds.minX, carBounds.minY, carBounds.minZ);
+        // LBM uniforms
+        if (useLBMLoc != -1) glUniform1i(useLBMLoc, (useLBM && lbmGrid) ? 1 : 0);
+        if (lbmGridSizeLoc != -1 && lbmGrid) {
+            glUniform3i(lbmGridSizeLoc, lbmGrid->sizeX, lbmGrid->sizeY, lbmGrid->sizeZ);
         }
-        if (carMaxLoc != -1) {
-            glUniform3f(carMaxLoc, carBounds.maxX, carBounds.maxY, carBounds.maxZ);
-        }
-        if (carCenterLoc != -1) {
-            glUniform3f(carCenterLoc, carBounds.centerX, carBounds.centerY, carBounds.centerZ);
-        }
-        if (collisionModeLoc != -1) {
-            glUniform1i(collisionModeLoc, collisionMode);
-        }
-        if (numTrianglesLoc != -1) {
-            glUniform1i(numTrianglesLoc, numTriangles);
-        }
-        
+
+        // Dispatch particle compute
         glDispatchCompute((GPU_PARTICLES + 255) / 256, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         // Render particles
         glUseProgram(particleShaderProgram);
-        if (viewLoc != -1) {
-            glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
-        }
-        if (vizModeLoc != -1) {
-            glUniform1i(vizModeLoc, visualizationMode);
-        }
-        if (maxSpeedLoc != -1) {
-            glUniform1f(maxSpeedLoc, maxSpeed);
-        }
+        if (viewLoc != -1) glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view);
+        if (vizModeLoc != -1) glUniform1i(vizModeLoc, visualizationMode);
+        if (maxSpeedLoc != -1) glUniform1f(maxSpeedLoc, maxSpeed);
         
         glBindVertexArray(particleVAO);
         glDrawArrays(GL_POINTS, 0, GPU_PARTICLES);
@@ -829,50 +817,53 @@ int main(int argc, char* argv[]) {
         // Render car model
         if (carModel.faceCount > 0) {
             glUseProgram(0);
-            
             glMatrixMode(GL_PROJECTION);
             glLoadMatrixf(projection);
-            
             glMatrixMode(GL_MODELVIEW);
             glLoadMatrixf(view);
-            
             renderModel(&carModel, SCALE);
             checkGLError("After rendering model");
         }
 
-        // Debug output every 60 frames
+        // Debug output
         if (frameCount % 60 == 0) {
             const char* collisionNames[] = {"OFF", "AABB", "TRI"};
-            printf("Frame %d | FPS: %.1f | Collision: %s | Viz: %s | Wind: %.1f | MaxSpd: %.1f\n", 
+            printf("Frame %d | FPS: %.1f | Collision: %s | Viz: %s | Wind: %.1f | LBM: %s\n", 
                    frameCount, 1.0f / deltaTime,
                    collisionNames[collisionMode],
                    vizModeNames[visualizationMode],
                    windSpeed,
-                   maxSpeed);
+                   (useLBM && lbmGrid) ? "ON" : "OFF");
+            
+            if (lbmGrid && useLBM) {
+                float testVel[4];
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, LBM_GetVelocityBuffer(lbmGrid));
+                glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(testVel), testVel);
+                printf("  LBM vel[0]: (%.4f, %.4f, %.4f) rho=%.4f\n", 
+                       testVel[0], testVel[1], testVel[2], testVel[3]);
+            }
         }
 
-        // Check if we've rendered enough frames (headless mode)
         if (maxFrames > 0 && frameCount >= maxFrames) {
             printf("Render complete: %d frames\n", frameCount);
             running = 0;
         }
         
-        // Save frames in headless mode
         if (renderDuration > 0 && strlen(outputPath) > 0) {
             char framePath[512];
             snprintf(framePath, sizeof(framePath), "%s/frame_%05d.ppm", outputPath, frameCount);
-            saveFrameToPPM(framePath, WIDTH, HEIGHT);  // You'll need this function
+            saveFrameToPPM(framePath, WIDTH, HEIGHT);
         }
 
         SDL_GL_SwapWindow(window);
     }
 
-    // Cleanup
     printf("Cleaning up...\n");
     free(particles);
     if (triangleData) free(triangleData);
     freeModel(&carModel);
     if (fluidCube) FluidCubeFree(fluidCube);
+    if (lbmGrid) LBM_Free(lbmGrid);
     glDeleteVertexArrays(1, &particleVAO);
     glDeleteBuffers(1, &particleBuffer);
     if (triangleBuffer) glDeleteBuffers(1, &triangleBuffer);

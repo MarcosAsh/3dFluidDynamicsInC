@@ -201,6 +201,30 @@ src/fluid_cube.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/3d_fluid_simulation_car.dir/build.make CMakeFiles/3d_fluid_simulation_car.dir/src/fluid_cube.c.s
 .PHONY : src/fluid_cube.c.s
 
+src/lbm.o: src/lbm.c.o
+.PHONY : src/lbm.o
+
+# target to build an object file
+src/lbm.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/3d_fluid_simulation_car.dir/build.make CMakeFiles/3d_fluid_simulation_car.dir/src/lbm.c.o
+.PHONY : src/lbm.c.o
+
+src/lbm.i: src/lbm.c.i
+.PHONY : src/lbm.i
+
+# target to preprocess a source file
+src/lbm.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/3d_fluid_simulation_car.dir/build.make CMakeFiles/3d_fluid_simulation_car.dir/src/lbm.c.i
+.PHONY : src/lbm.c.i
+
+src/lbm.s: src/lbm.c.s
+.PHONY : src/lbm.s
+
+# target to generate assembly for a file
+src/lbm.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/3d_fluid_simulation_car.dir/build.make CMakeFiles/3d_fluid_simulation_car.dir/src/lbm.c.s
+.PHONY : src/lbm.c.s
+
 src/main.o: src/main.c.o
 .PHONY : src/main.o
 
@@ -315,6 +339,9 @@ help:
 	@echo "... src/fluid_cube.o"
 	@echo "... src/fluid_cube.i"
 	@echo "... src/fluid_cube.s"
+	@echo "... src/lbm.o"
+	@echo "... src/lbm.i"
+	@echo "... src/lbm.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

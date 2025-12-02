@@ -37,7 +37,7 @@ build_cache = modal.Volume.from_name("fluid-sim-build-cache", create_if_missing=
 REPO_URL = "https://github.com/MarcosAsh/3dFluidDynamicsInC.git"
 
 
-@app.function(image=image, volumes={"/cache": build_cache}, timeout=300)
+@app.function(image=image, volumes={"/cache": build_cache}, timeout=1000)
 def build_simulation() -> str:
     source_dir = Path("/cache/source")
     build_dir = Path("/cache/build")
@@ -100,7 +100,7 @@ def build_simulation() -> str:
     gpu="T4",
     volumes={"/cache": build_cache},
     secrets=[modal.Secret.from_name("aws-secret")],
-    timeout=300,
+    timeout=1000,
 )
 def render_simulation(
     job_id: str,
@@ -238,7 +238,7 @@ def upload_video(video_path: Path, job_id: str) -> str:
     gpu="T4",
     volumes={"/cache": build_cache},
     secrets=[modal.Secret.from_name("aws-secret")],
-    timeout=300,
+    timeout=1000,
 )
 @modal.web_endpoint(method="POST")
 def render_endpoint(data: dict) -> dict:
