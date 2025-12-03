@@ -272,3 +272,91 @@ float LBM_ComputeDragCoefficient(LBMGrid* grid, float inletVelocity, float refAr
     
     return Cd;
 }
+
+void LBM_SetSolidMesh(LBMGrid* grid, float* triangles, int numTriangles,
+                      float minX, float minY, float minZ,
+                      float maxX, float maxY, float maxZ) {
+    
+    int* solidData = (int*)calloc(grid->totalCells, sizeof(int));
+    
+    // World to grid scaling
+    float scaleX = grid->sizeX / 8.0f;   // world x: -4 to 4
+    float scaleY = grid->sizeY / 4.0f;   // world y: -2 to 2
+    float scaleZ = grid->sizeZ / 4.0f;   // world z: -2 to 2
+    
+    int solidCount = 0;
+    
+    // For each grid cell, check if it's inside the mesh
+    for (int gz = 0; gz < grid->sizeZ; gz++) {
+        for (int gy = 0; gy < grid->sizeY; gy++) {
+            for (int gx = 0; gx < grid->sizeX; gx++) {
+                // Grid cell center in world coords
+                float wx = (gx + 0.5f) / scaleX - 4.0f;
+                float wy = (gy + 0.5f) / scaleY - 2.0f;
+                float wz = (gz + 0.5f) / scaleZ - 2.0f;
+                
+                // Quick AABB check first
+                if (wx < minX || wx > maxX ||
+                    wy < minY || wy > maxY ||
+                    wz < minZ || wz > maxZ) {
+                    continue;
+                }
+                
+                // Ray casting to check if inside mesh
+                // Cast ray in +X direction, count intersections
+                int intersections = 0;
+                
+                for (int t = 0; t < numTriangles; t++) {
+                    float* tri = &triangles[t * 12]; // 3 verts * 4 floats (with padding)
+                    
+                    float v0x = tri[0], v0y = tri[1], v0z = tri[2];
+                    float v1x = tri[4], v1y = tri[5], v1z = tri[6];
+                    float v2x = tri[8], v2y = tri[9], v2z = tri[10];
+                    
+                    // Ray-triangle intersection (Möller–Trumbore)
+                    float e1x = v1x - v0x, e1y = v1y - v0y, e1z = v1z - v0z;
+                    float e2x = v2x - v0x, e2y = v2y - v0y, e2z = v2z - v0z;
+                    
+                    // Ray direction is (1, 0, 0)
+                    float hx = 0, hy = -e2z, hz = e2y;
+                    float a = e1x * hx + e1y * hy + e1z * hz;
+                    
+                    if (a > -0.00001f && a < 0.00001f) continue;
+                    
+                    float f = 1.0f / a;
+                    float sx = wx - v0x, sy = wy - v0y, sz = wz - v0z;
+                    float u = f * (sx * hx + sy * hy + sz * hz);
+                    
+                    if (u < 0.0f || u > 1.0f) continue;
+                    
+                    float qx = sy * e1z - sz * e1y;
+                    float qy = sz * e1x - sx * e1z;
+                    float qz = sx * e1y - sy * e1x;
+                    
+                    float v = f * qx; // ray dir dot q, but ray dir is (1,0,0)
+                    
+                    if (v < 0.0f || u + v > 1.0f) continue;
+                    
+                    float dist = f * (e2x * qx + e2y * qy + e2z * qz);
+                    
+                    if (dist > 0.00001f) {
+                        intersections++;
+                    }
+                }
+                
+                // Odd number of intersections = inside
+                if (intersections % 2 == 1) {
+                    int idx = gx + gy * grid->sizeX + gz * grid->sizeX * grid->sizeY;
+                    solidData[idx] = 1;
+                    solidCount++;
+                }
+            }
+        }
+    }
+    
+    printf("LBM mesh solid: %d cells marked as solid\n", solidCount);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->solidBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, grid->totalCells * sizeof(int), solidData);
+    free(solidData);
+}

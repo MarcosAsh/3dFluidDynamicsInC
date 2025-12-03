@@ -39,6 +39,7 @@ uniform int collisionMode;
 
 uniform int useLBM;
 uniform ivec3 lbmGridSize;
+uniform float time;
 
 vec3 sampleLBMVelocity(vec3 worldPos) {
     vec3 gridPos;
@@ -208,14 +209,23 @@ void main() {
             }
         }
     }
-    
+    // Reset stuck particles
+    float speed = length(p.velocity);
+    if (speed < 0.05 && p.position.x > carMin.x - 0.5 && p.position.x < carMax.x + 0.5) {
+        p.life = 0.0;  // Force respawn next frame
+    }
+
     p.life -= 0.01 * dt;
     
     if (p.life <= 0.0 || p.position.x > 4.0) {
-        p.position = vec3(-4.0, 
-                         (fract(sin(float(idx) * 43758.5453)) - 0.5) * 3.0, 
-                         (fract(sin(float(idx) * 12345.6789)) - 0.5) * 3.0);
-        p.velocity = vec3(0.5 + fract(sin(float(idx) * 9876.54321)) * 0.2, 0.0, 0.0);
+        float seed1 = float(idx) + time * 1000.0;
+        float seed2 = float(idx) * 1.5 + time * 1234.0;
+        
+        float randY = fract(sin(seed1 * 43758.5453)) - 0.5;
+        float randZ = fract(sin(seed2 * 12345.6789)) - 0.5;
+        
+        p.position = vec3(-4.0, randY * 1.5, randZ * 1.5);
+        p.velocity = vec3(0.5 + fract(sin(seed1 * 9876.54321)) * 0.2, 0.0, 0.0);
         p.life = 1.0;
     }
     

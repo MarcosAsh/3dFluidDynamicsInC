@@ -21,11 +21,11 @@
 #define GPU_PARTICLES MAX_PARTICLES
 
 // Global model transform (definitions)
-float g_modelScale = 3.0f;
+float g_modelScale = 1.0f;
 float g_offsetX = 0.0f;
-float g_offsetY = -0.2f;
+float g_offsetY = -0.1f;
 float g_offsetZ = -0.9f;
-float g_carRotationY = 90.0f;
+float g_carRotationY = 360.0f;
 
 // Slider variables
 int sliderX = 100;
@@ -501,17 +501,65 @@ int main(int argc, char* argv[]) {
         carModel = loadOBJ("../assets/3d-files/car-model.obj");
     }
     
-    printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
-    
-    // Set global model transform
-    g_modelScale = 0.05f;
-    g_offsetX = 0.0f;
-    g_offsetY = -0.2f;
-    g_offsetZ = -0.9f;
+   printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
+
+    // Compute model center and auto-center it
+    if (carModel.vertexCount > 0) {
+        float minX = FLT_MAX, minY = FLT_MAX, minZ = FLT_MAX;
+        float maxX = -FLT_MAX, maxY = -FLT_MAX, maxZ = -FLT_MAX;
+        
+        for (int i = 0; i < carModel.vertexCount; i++) {
+            if (carModel.vertices[i].x < minX) minX = carModel.vertices[i].x;
+            if (carModel.vertices[i].y < minY) minY = carModel.vertices[i].y;
+            if (carModel.vertices[i].z < minZ) minZ = carModel.vertices[i].z;
+            if (carModel.vertices[i].x > maxX) maxX = carModel.vertices[i].x;
+            if (carModel.vertices[i].y > maxY) maxY = carModel.vertices[i].y;
+            if (carModel.vertices[i].z > maxZ) maxZ = carModel.vertices[i].z;
+        }
+        
+        float centerX = (minX + maxX) * 0.5f;
+        float centerY = (minY + maxY) * 0.5f;
+        float centerZ = (minZ + maxZ) * 0.5f;
+        
+        printf("Model raw bounds: (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)\n", 
+            minX, minY, minZ, maxX, maxY, maxZ);
+        printf("Model center: (%.2f, %.2f, %.2f)\n", centerX, centerY, centerZ);
+        
+        // Auto-scale if not set via CLI
+        float sizeX = maxX - minX;
+        float sizeY = maxY - minY;
+        float sizeZ = maxZ - minZ;
+        float maxDim = fmaxf(sizeX, fmaxf(sizeY, sizeZ));
+        
+        // Scale so largest dimension fits in ~2 units
+        g_modelScale = 2.0f / maxDim;
+        printf("Auto scale: %.6f (max dim: %.2f)\n", g_modelScale, maxDim);
+        
+        // Auto-center: offset so model center is at origin
+        g_offsetX = -centerX * g_modelScale;
+        g_offsetY = -centerY * g_modelScale;
+        g_offsetZ = -centerZ * g_modelScale;
+        
+        printf("Auto offset: (%.4f, %.4f, %.4f)\n", g_offsetX, g_offsetY, g_offsetZ);
+    }
+
     g_carRotationY = 90.0f;
-    
+        
     CarBounds carBounds = computeModelBounds(&carModel, g_modelScale, g_offsetX, g_offsetY, g_offsetZ, g_carRotationY);
     
+    printf("Creating triangle buffer...\n");
+    int numTriangles = 0;
+    GPUTriangle* triangleData = createTriangleBuffer(&carModel, g_modelScale, g_offsetX, g_offsetY, g_offsetZ, g_carRotationY, &numTriangles);
+
+    GLuint triangleBuffer = 0;
+    if (triangleData && numTriangles > 0) {
+        glGenBuffers(1, &triangleBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, triangleBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, numTriangles * sizeof(GPUTriangle), triangleData, GL_STATIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, triangleBuffer);
+        printf("Uploaded %d triangles to GPU\n", numTriangles);
+    }
+
     // Initialize LBM grid
     int lbmSizeX = 64;
     int lbmSizeY = 32;
@@ -521,10 +569,19 @@ int main(int argc, char* argv[]) {
     printf("Initializing LBM grid...\n");
     lbmGrid = LBM_Create(lbmSizeX, lbmSizeY, lbmSizeZ, lbmViscosity);
     
+    
     if (lbmGrid) {
-        LBM_SetSolidAABB(lbmGrid, 
-                         carBounds.minX, carBounds.minY, carBounds.minZ,
-                         carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        if (triangleData && numTriangles > 0) {
+            // Use actual mesh for LBM solid
+            LBM_SetSolidMesh(lbmGrid, (float*)triangleData, numTriangles,
+                            carBounds.minX, carBounds.minY, carBounds.minZ,
+                            carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        } else {
+            // Fallback to AABB
+            LBM_SetSolidAABB(lbmGrid, 
+                            carBounds.minX, carBounds.minY, carBounds.minZ,
+                            carBounds.maxX, carBounds.maxY, carBounds.maxZ);
+        }
         LBM_InitializeFlow(lbmGrid, 0.1f, 0.0f, 0.0f);
         printf("LBM initialized successfully\n");
     } else {
@@ -543,7 +600,8 @@ int main(int argc, char* argv[]) {
     GLint numTrianglesLoc = glGetUniformLocation(computeShaderProgram, "numTriangles");
     GLint useLBMLoc = glGetUniformLocation(computeShaderProgram, "useLBM");
     GLint lbmGridSizeLoc = glGetUniformLocation(computeShaderProgram, "lbmGridSize");
-    
+    GLint timeLoc = glGetUniformLocation(computeShaderProgram, "time");
+
     printf("Compute shader uniform locations:\n");
     printf("  dt=%d, wind=%d, carMin=%d, carMax=%d, carCenter=%d\n",
            dtLoc, windLoc, carMinLoc, carMaxLoc, carCenterLoc);
@@ -582,19 +640,8 @@ int main(int argc, char* argv[]) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
     checkGLError("After creating particle buffer");
 
-    printf("Creating triangle buffer...\n");
-    int numTriangles = 0;
-    GPUTriangle* triangleData = createTriangleBuffer(&carModel, g_modelScale, g_offsetX, g_offsetY, g_offsetZ, g_carRotationY, &numTriangles);
 
-    GLuint triangleBuffer = 0;
-    if (triangleData && numTriangles > 0) {
-        glGenBuffers(1, &triangleBuffer);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, triangleBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, numTriangles * sizeof(GPUTriangle), triangleData, GL_STATIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, triangleBuffer);
-        printf("Uploaded %d triangles to GPU\n", numTriangles);
-    }
-
+    
     GLuint particleVAO;
     glGenVertexArrays(1, &particleVAO);
     glBindVertexArray(particleVAO);
@@ -835,6 +882,9 @@ int main(int argc, char* argv[]) {
         if (lbmGridSizeLoc != -1 && lbmGrid) {
             glUniform3i(lbmGridSizeLoc, lbmGrid->sizeX, lbmGrid->sizeY, lbmGrid->sizeZ);
         }
+
+        // Time uniform for randomness
+            if (timeLoc != -1) glUniform1f(timeLoc, (float)SDL_GetTicks() / 1000.0f);
 
         // Dispatch particle compute
         glDispatchCompute((GPU_PARTICLES + 255) / 256, 1, 1);

@@ -54,4 +54,8 @@ void LBM_ComputeDragForce(LBMGrid* grid, float* forceX, float* forceY, float* fo
 // Compute drag coefficient
 float LBM_ComputeDragCoefficient(LBMGrid* grid, float inletVelocity, float refArea);
 
+// Set solid mesh
+void LBM_SetSolidMesh(LBMGrid* grid, float* triangles, int numTriangles,
+                      float minX, float minY, float minZ,
+                      float maxX, float maxY, float maxZ);
 #endif // LBM_H
