@@ -16,9 +16,16 @@
 #include "../obj-file-loader/lib/model_loader.h"
 #include "../lib/render_model.h"
 #include "../lib/opengl_utils.h"
-
+#include "../lib/config.h"
 
 #define GPU_PARTICLES MAX_PARTICLES
+
+// Global model transform (definitions)
+float g_modelScale = 3.0f;
+float g_offsetX = 0.0f;
+float g_offsetY = -0.2f;
+float g_offsetZ = -0.9f;
+float g_carRotationY = 90.0f;
 
 // Slider variables
 int sliderX = 100;
@@ -272,24 +279,31 @@ int main(int argc, char* argv[]) {
     printf("Starting 3D Fluid Simulation...\n");
     srand(time(NULL));
     
+    // Parse command line arguments
     float windSpeed = 1.0f;
     int visualizationMode = 1;
     int collisionMode = 1;
     int renderDuration = 0;
     char outputPath[256] = "";
-    
+    char modelPath[512] = "assets/3d-files/car-model.obj";
+    int slantAngle = 0;
+
     static struct option long_options[] = {
         {"wind", required_argument, 0, 'w'},
         {"viz", required_argument, 0, 'v'},
         {"collision", required_argument, 0, 'c'},
         {"duration", required_argument, 0, 'd'},
         {"output", required_argument, 0, 'o'},
+        {"model", required_argument, 0, 'm'},
+        {"angle", required_argument, 0, 'a'},
+        {"scale", required_argument, 0, 's'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
+        
     };
-    
+
     int opt;
-    while ((opt = getopt_long(argc, argv, "w:v:c:d:o:h", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "w:v:c:d:o:m:a:h", long_options, NULL)) != -1) {
         switch (opt) {
             case 'w':
                 windSpeed = atof(optarg);
@@ -313,6 +327,20 @@ int main(int argc, char* argv[]) {
             case 'o':
                 strncpy(outputPath, optarg, 255);
                 break;
+            case 'm':
+                strncpy(modelPath, optarg, 511);
+                break;
+            case 'a':
+                slantAngle = atoi(optarg);
+                if (slantAngle == 25) {
+                    strncpy(modelPath, "assets/3d-files/ahmed-25deg.obj", 511);
+                } else if (slantAngle == 35) {
+                    strncpy(modelPath, "assets/3d-files/ahmed-35deg.obj", 511);
+                }
+                break;
+            case 's':
+                g_modelScale = atof(optarg);
+                break;
             case 'h':
             default:
                 printf("Usage: %s [options]\n", argv[0]);
@@ -322,15 +350,22 @@ int main(int argc, char* argv[]) {
                 printf("  -c, --collision=MODE  Collision 0=off, 1=AABB, 2=mesh (default: 1)\n");
                 printf("  -d, --duration=SECS   Render duration (0=interactive, default: 0)\n");
                 printf("  -o, --output=PATH     Output directory for frames\n");
+                printf("  -m, --model=PATH      Path to OBJ model file\n");
+                printf("  -a, --angle=DEGREES   Ahmed body slant angle (25 or 35)\n");
+                printf("  -s, --scale=SCALE     Model scale factor (default: 0.05)\n");
                 printf("  -h, --help            Show this help\n");
                 return 0;
         }
     }
-    
+
+    // Print config
     printf("Configuration:\n");
+    printf("  Model: %s\n", modelPath);
+    if (slantAngle > 0) printf("  Slant Angle: %d°\n", slantAngle);
     printf("  Wind Speed: %.1f m/s\n", windSpeed);
     printf("  Visualization: %d\n", visualizationMode);
     printf("  Collision: %d\n", collisionMode);
+
     if (renderDuration > 0) {
         printf("  Render Mode: %d seconds to %s\n", renderDuration, outputPath);
     } else {
@@ -454,8 +489,8 @@ int main(int argc, char* argv[]) {
     
     checkGLError("After setting uniforms");
 
-    printf("Loading car model...\n");
-    Model carModel = loadOBJ("assets/3d-files/car-model.obj");
+    printf("Loading 3D model: %s\n", modelPath);
+    Model carModel = loadOBJ(modelPath);
     
     if (carModel.vertexCount == 0) {
         printf("Trying alternative path...\n");
@@ -468,13 +503,14 @@ int main(int argc, char* argv[]) {
     
     printf("Model loaded: %d vertices, %d faces\n", carModel.vertexCount, carModel.faceCount);
     
-    float modelScale = 0.05f;
-    float offsetX = 0.0f;
-    float offsetY = -0.2f;
-    float offsetZ = -0.9f;
-    float carRotationY = 90.0f;
+    // Set global model transform
+    g_modelScale = 0.05f;
+    g_offsetX = 0.0f;
+    g_offsetY = -0.2f;
+    g_offsetZ = -0.9f;
+    g_carRotationY = 90.0f;
     
-    CarBounds carBounds = computeModelBounds(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY);
+    CarBounds carBounds = computeModelBounds(&carModel, g_modelScale, g_offsetX, g_offsetY, g_offsetZ, g_carRotationY);
     
     // Initialize LBM grid
     int lbmSizeX = 64;
@@ -548,7 +584,7 @@ int main(int argc, char* argv[]) {
 
     printf("Creating triangle buffer...\n");
     int numTriangles = 0;
-    GPUTriangle* triangleData = createTriangleBuffer(&carModel, modelScale, offsetX, offsetY, offsetZ, carRotationY, &numTriangles);
+    GPUTriangle* triangleData = createTriangleBuffer(&carModel, g_modelScale, g_offsetX, g_offsetY, g_offsetZ, g_carRotationY, &numTriangles);
 
     GLuint triangleBuffer = 0;
     if (triangleData && numTriangles > 0) {
@@ -817,14 +853,25 @@ int main(int argc, char* argv[]) {
         // Render car model
         if (carModel.faceCount > 0) {
             glUseProgram(0);
+            
             glMatrixMode(GL_PROJECTION);
+            glPushMatrix();
             glLoadMatrixf(projection);
+            
             glMatrixMode(GL_MODELVIEW);
+            glPushMatrix();
             glLoadMatrixf(view);
+            
             renderModel(&carModel, SCALE);
+            
+            glPopMatrix();
+            glMatrixMode(GL_PROJECTION);
+            glPopMatrix();
+            glMatrixMode(GL_MODELVIEW);
+            
             checkGLError("After rendering model");
         }
-
+        
         // Compute and display drag coefficient every 60 frames
         if (frameCount % 60 == 0 && lbmGrid && useLBM) {
             float fx, fy, fz;

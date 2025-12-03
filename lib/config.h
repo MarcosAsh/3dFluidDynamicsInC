@@ -17,6 +17,13 @@
 #define DEPTH 500
 #define SCALE 5
 
+// Global model transform (extern declarations)
+extern float g_modelScale;
+extern float g_offsetX;
+extern float g_offsetY;
+extern float g_offsetZ;
+extern float g_carRotationY;
+
 // Particle count used for both CPU and GPU particle systems
 #ifndef MAX_PARTICLES
 #define MAX_PARTICLES 10000

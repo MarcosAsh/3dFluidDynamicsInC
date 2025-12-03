@@ -204,4 +204,5 @@ CMakeFiles/3d_fluid_simulation_car.dir/src/main.c.o: \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/config.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../obj-file-loader/lib/model_loader.h \
  /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/render_model.h \
- /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/opengl_utils.h
+ /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/opengl_utils.h \
+ /home/marcos_ashton/3dFluidDynamicsInC/src/../lib/config.h

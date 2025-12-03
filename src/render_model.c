@@ -1,10 +1,9 @@
 #include "../lib/render_model.h"
+#include "../lib/config.h"
 #include <GL/glew.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-
-float carRotationY = 90.0f;
 
 void renderModel(Model* model, int scale) {
     if (model->faceCount == 0) return;
@@ -14,23 +13,21 @@ void renderModel(Model* model, int scale) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glColor3f(1.0f, 1.0f, 0.0f);
     
-    float scaleF = 0.05f;
-    float offsetX = 0.0f;
-    float offsetY = -0.2f;
-    float offsetZ = -0.9f;
+    float scaleF = g_modelScale;
+    float offsetX = g_offsetX;
+    float offsetY = g_offsetY;
+    float offsetZ = g_offsetZ;
     
-    float radY = carRotationY * 3.14159265f / 180.0f;
+    float radY = g_carRotationY * 3.14159265f / 180.0f;
     float cosY = cosf(radY);
     float sinY = sinf(radY);
     
     glBegin(GL_TRIANGLES);
     for (int i = 0; i < model->faceCount; i++) {
-        // OBJ indices are 1-based!
         int idx0 = model->faces[i].v1 - 1;
         int idx1 = model->faces[i].v2 - 1;
         int idx2 = model->faces[i].v3 - 1;
         
-        // Skip invalid faces
         if (idx0 < 0 || idx0 >= model->vertexCount ||
             idx1 < 0 || idx1 >= model->vertexCount ||
             idx2 < 0 || idx2 >= model->vertexCount) {

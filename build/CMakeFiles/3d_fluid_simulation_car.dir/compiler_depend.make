@@ -1306,6 +1306,7 @@ CMakeFiles/3d_fluid_simulation_car.dir/src/particle_system.c.o: /home/marcos_ash
 
 CMakeFiles/3d_fluid_simulation_car.dir/src/render_model.c.o: /home/marcos_ashton/3dFluidDynamicsInC/src/render_model.c \
   /home/marcos_ashton/3dFluidDynamicsInC/obj-file-loader/lib/model_loader.h \
+  /home/marcos_ashton/3dFluidDynamicsInC/lib/config.h \
   /home/marcos_ashton/3dFluidDynamicsInC/lib/render_model.h \
   /usr/include/GL/gl.h \
   /usr/include/GL/glew.h \
