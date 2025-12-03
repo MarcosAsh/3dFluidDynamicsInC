@@ -1,4 +1,31 @@
-CMakeCache.txt
+# C / CMake build outputs
+build/
+cmake-build-*/
 CMakeFiles/
-cmake_install.cmake
+CMakeCache.txt
 Makefile
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Binaries produced by this project
+3d-fluid-simulation-car
+fluid_sim
+
+# IDE / editor stuff
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Misc
+*.log
+*.mp4
