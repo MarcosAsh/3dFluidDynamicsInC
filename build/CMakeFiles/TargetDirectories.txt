@@ -1,3 +1,0 @@
-/home/marcos_ashton/3dFluidDynamicsInC/build/CMakeFiles/3d_fluid_simulation_car.dir
-/home/marcos_ashton/3dFluidDynamicsInC/build/CMakeFiles/edit_cache.dir
-/home/marcos_ashton/3dFluidDynamicsInC/build/CMakeFiles/rebuild_cache.dir

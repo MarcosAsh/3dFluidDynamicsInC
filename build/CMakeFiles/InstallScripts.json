@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/marcos_ashton/3dFluidDynamicsInC/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
