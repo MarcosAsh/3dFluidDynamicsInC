@@ -1,7 +1,7 @@
 """
 Modal GPU worker for fluid sim.
 Deploy: modal deploy modal_worker.py
-Test: modal run modal_worker.py --duration=5
+Test: modal run modal_worker.py --duration=5 --model=ahmed25
 """
 
 import modal
@@ -15,7 +15,7 @@ app = modal.App("fluid-sim")
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("cmake")  # gets latest cmake
+    .pip_install("cmake")
     .apt_install(
         "build-essential", "pkg-config", "git",
         "libgl1-mesa-dev", "libglew-dev", "libglu1-mesa-dev",
@@ -108,6 +108,7 @@ def render_simulation(
     viz_mode: int = 1,
     collision_mode: int = 1,
     duration: int = 10,
+    model: str = "car",
 ) -> dict:
     import time
     
@@ -135,7 +136,15 @@ def render_simulation(
         )
         time.sleep(2)
         
-        print(f"Running sim: wind={wind_speed}, viz={viz_mode}, {duration}s")
+        # Select model path
+        model_paths = {
+            "car": "assets/3d-files/car-model.obj",
+            "ahmed25": "assets/3d-files/ahmed_25deg_m.obj",
+            "ahmed35": "assets/3d-files/ahmed_35deg_m.obj",
+        }
+        model_path = model_paths.get(model, model_paths["car"])
+        
+        print(f"Running sim: wind={wind_speed}, viz={viz_mode}, model={model}, {duration}s")
         
         env = os.environ.copy()
         env["DISPLAY"] = ":99"
@@ -147,6 +156,7 @@ def render_simulation(
             f"--collision={collision_mode}",
             f"--duration={duration}",
             f"--output={frames_dir}",
+            f"--model={model_path}",
         ]
         
         result = subprocess.run(
@@ -158,6 +168,21 @@ def render_simulation(
         print(f"stdout: {result.stdout[-1000:]}")
         if result.stderr:
             print(f"stderr: {result.stderr[-500:]}")
+        
+        # Extract Cd values from stdout
+        cd_values = []
+        for line in result.stdout.split('\n'):
+            if 'Cd=' in line:
+                try:
+                    cd_str = line.split('Cd=')[1].split()[0]
+                    cd_values.append(float(cd_str))
+                except:
+                    pass
+        
+        # Get the last stable Cd value (average of last few)
+        cd_value = None
+        if cd_values:
+            cd_value = sum(cd_values[-5:]) / len(cd_values[-5:])
             
         if result.returncode != 0:
             return {"status": "error", "error": f"Crashed: {result.stderr[-300:]}"}
@@ -182,17 +207,23 @@ def render_simulation(
             str(output_video),
         ]
         
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=120)
+        ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=120)
         
         if not output_video.exists():
-            return {"status": "error", "error": f"FFmpeg failed: {result.stderr[-300:]}"}
+            return {"status": "error", "error": f"FFmpeg failed: {ffmpeg_result.stderr[-300:]}"}
         
         video_size = output_video.stat().st_size
         print(f"Video size: {video_size / 1024 / 1024:.1f} MB")
         
         video_url = upload_video(output_video, job_id)
         
-        return {"status": "complete", "video_url": video_url}
+        return {
+            "status": "complete",
+            "video_url": video_url,
+            "model": model,
+            "wind_speed": wind_speed,
+            "cd_value": cd_value,
+        }
         
     except subprocess.TimeoutExpired:
         return {"status": "error", "error": "Timed out"}
@@ -253,6 +284,7 @@ def render_endpoint(data: dict) -> dict:
         viz_mode=int(data.get("viz_mode", 1)),
         collision_mode=int(data.get("collision_mode", 1)),
         duration=int(data.get("duration", 10)),
+        model=data.get("model", "car"),
     )
     
     callback_url = data.get("callback_url")
@@ -265,15 +297,43 @@ def render_endpoint(data: dict) -> dict:
     return result
 
 
+@app.function(image=image, volumes={"/cache": build_cache}, timeout=300)
+def force_rebuild() -> str:
+    """Force a clean rebuild by clearing the cache."""
+    source_dir = Path("/cache/source")
+    build_dir = Path("/cache/build")
+    
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+        print("Cleared build directory")
+    
+    if source_dir.exists():
+        shutil.rmtree(source_dir)
+        print("Cleared source directory")
+    
+    build_cache.commit()
+    
+    # Now rebuild
+    return build_simulation.local()
+
+
 @app.local_entrypoint()
 def main(
     wind: float = 1.0,
     viz: int = 1,
     collision: int = 1,
     duration: int = 5,
+    model: str = "car",
     build_only: bool = False,
+    rebuild: bool = False,
 ):
     import uuid
+    
+    if rebuild:
+        print("Force rebuilding...")
+        path = force_rebuild.remote()
+        print(f"Rebuilt: {path}")
+        return
     
     if build_only:
         print("Building...")
@@ -282,7 +342,7 @@ def main(
         return
     
     job_id = str(uuid.uuid4())[:8]
-    print(f"Job {job_id}: wind={wind}, viz={viz}, collision={collision}, {duration}s")
+    print(f"Job {job_id}: wind={wind}, viz={viz}, collision={collision}, model={model}, {duration}s")
     
     result = render_simulation.remote(
         job_id=job_id,
@@ -290,6 +350,7 @@ def main(
         viz_mode=viz,
         collision_mode=collision,
         duration=duration,
+        model=model,
     )
     
     print(f"Status: {result['status']}")
@@ -304,5 +365,7 @@ def main(
             print(f"Saved: render_{job_id}.mp4")
         else:
             print(f"URL: {url}")
+    if result.get("cd_value"):
+        print(f"Drag Coefficient (Cd): {result['cd_value']:.4f}")
     if result.get("error"):
         print(f"Error: {result['error']}")
