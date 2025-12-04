@@ -122,12 +122,34 @@ def render_simulation(
         executable = Path("/cache/build/3d_fluid_simulation_car")
         source_dir = Path("/cache/source")
         
-        if not executable.exists():
-            print("Need to build first...")
-            build_simulation.local()
-            
+        def ensure_built():
+            """Make sure we have a fresh binary with the latest CLI flags."""
+            if not executable.exists():
+                print("Need to build first...")
+                build_simulation.local()
+            else:
+                # Check that the binary understands --model; if not, rebuild.
+                help_out = subprocess.run(
+                    [str(executable), "--help"],
+                    capture_output=True,
+                    text=True,
+                )
+                help_text = (help_out.stdout or "") + (help_out.stderr or "")
+                if "--model" not in help_text:
+                    print("Binary missing --model flag; rebuilding to refresh build cache...")
+                    build_simulation.local()
+        
+        ensure_built()
         if not executable.exists():
             return {"status": "error", "error": "Build failed"}
+        
+        help_check = subprocess.run(
+            [str(executable), "--help"],
+            capture_output=True,
+            text=True,
+        )
+        help_text = (help_check.stdout or "") + (help_check.stderr or "")
+        supports_model_flag = "--model" in help_text
         
         print("Starting Xvfb...")
         xvfb = subprocess.Popen(
@@ -156,8 +178,12 @@ def render_simulation(
             f"--collision={collision_mode}",
             f"--duration={duration}",
             f"--output={frames_dir}",
-            f"--model={model_path}",
         ]
+        
+        if supports_model_flag:
+            cmd.append(f"--model={model_path}")
+        else:
+            print("Warning: binary does not support --model; using default compiled model.")
         
         result = subprocess.run(
             cmd, cwd=str(source_dir), env=env,

@@ -279,6 +279,37 @@ void LBM_SetSolidMesh(LBMGrid* grid, float* triangles, int numTriangles,
     
     int* solidData = (int*)calloc(grid->totalCells, sizeof(int));
     
+    // Precompute simple bounds per triangle so most tests can be skipped quickly.
+    typedef struct {
+        float minY, maxY;
+        float minZ, maxZ;
+        float maxX;
+    } TriBounds;
+    
+    TriBounds* triBounds = (TriBounds*)malloc(numTriangles * sizeof(TriBounds));
+    if (!triBounds) {
+        printf("Failed to allocate triangle bounds; falling back to simple mesh test\n");
+    } else {
+        for (int t = 0; t < numTriangles; t++) {
+            float* tri = &triangles[t * 12];
+            float v0y = tri[1], v0z = tri[2], v0x = tri[0];
+            float v1y = tri[5], v1z = tri[6], v1x = tri[4];
+            float v2y = tri[9], v2z = tri[10], v2x = tri[8];
+            
+            float minYt = fminf(v0y, fminf(v1y, v2y));
+            float maxYt = fmaxf(v0y, fmaxf(v1y, v2y));
+            float minZt = fminf(v0z, fminf(v1z, v2z));
+            float maxZt = fmaxf(v0z, fmaxf(v1z, v2z));
+            float maxXt = fmaxf(v0x, fmaxf(v1x, v2x));
+            
+            triBounds[t].minY = minYt;
+            triBounds[t].maxY = maxYt;
+            triBounds[t].minZ = minZt;
+            triBounds[t].maxZ = maxZt;
+            triBounds[t].maxX = maxXt;
+        }
+    }
+    
     // World to grid scaling
     float scaleX = grid->sizeX / 8.0f;   // world x: -4 to 4
     float scaleY = grid->sizeY / 4.0f;   // world y: -2 to 2
@@ -307,6 +338,15 @@ void LBM_SetSolidMesh(LBMGrid* grid, float* triangles, int numTriangles,
                 int intersections = 0;
                 
                 for (int t = 0; t < numTriangles; t++) {
+                    if (triBounds) {
+                        TriBounds tb = triBounds[t];
+                        if (wy < tb.minY || wy > tb.maxY ||
+                            wz < tb.minZ || wz > tb.maxZ ||
+                            wx > tb.maxX) {
+                            continue;
+                        }
+                    }
+                    
                     float* tri = &triangles[t * 12]; // 3 verts * 4 floats (with padding)
                     
                     float v0x = tri[0], v0y = tri[1], v0z = tri[2];
@@ -359,4 +399,5 @@ void LBM_SetSolidMesh(LBMGrid* grid, float* triangles, int numTriangles,
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, grid->solidBuffer);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, grid->totalCells * sizeof(int), solidData);
     free(solidData);
+    if (triBounds) free(triBounds);
 }

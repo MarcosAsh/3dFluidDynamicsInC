@@ -564,6 +564,12 @@ int main(int argc, char* argv[]) {
     int lbmSizeX = 64;
     int lbmSizeY = 32;
     int lbmSizeZ = 32;
+    if (collisionMode == 2) {
+        // Per-triangle collision is heavier; run a slightly coarser LBM grid.
+        lbmSizeX = 48;
+        lbmSizeY = 24;
+        lbmSizeZ = 24;
+    }
     float lbmViscosity = 0.1f;
     
     printf("Initializing LBM grid...\n");
