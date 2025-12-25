@@ -134,7 +134,7 @@ void ParticleSystem_UpdateWithCollision(ParticleSystem* system, FluidCube* fluid
         
         // Reset expired particles (wind tunnel style)
         if (p->life <= 0.0f || p->x > 4.0f) {
-            p->x = -4.0f;
+            p->x = -4.0f - ((float)rand() / RAND_MAX * 0.5f); // Randomize start X slightly
             p->y = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
             p->z = ((float)rand() / RAND_MAX - 0.5f) * 3.0f;
             p->vx = 0.5f + ((float)rand() / RAND_MAX) * 0.2f;
@@ -143,14 +143,14 @@ void ParticleSystem_UpdateWithCollision(ParticleSystem* system, FluidCube* fluid
             p->life = 1.0f;
         }
         
-        // Boundary constraints
+        // Boundary constraints with epsilon pushback
         if (p->y < -2.0f || p->y > 2.0f) {
             p->vy *= -0.5f;
-            p->y = (p->y < -2.0f) ? -2.0f : 2.0f;
+            p->y = (p->y < -2.0f) ? -1.99f : 1.99f;
         }
         if (p->z < -2.0f || p->z > 2.0f) {
             p->vz *= -0.5f;
-            p->z = (p->z < -2.0f) ? -2.0f : 2.0f;
+            p->z = (p->z < -2.0f) ? -1.99f : 1.99f;
         }
     }
 
