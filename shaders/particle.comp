@@ -217,7 +217,7 @@ void main() {
 
     p.life -= 0.01 * dt;
     
-    if (p.life <= 0.0 || p.position.x > 4.0) {
+    if (p.life <= 0.0 || p.position.x > 4.0 || abs(p.position.y) > 2.0 || abs(p.position.z) > 2.0) {
         float seed1 = float(idx) + time * 1000.0;
         float seed2 = float(idx) * 1.5 + time * 1234.0;
         
@@ -229,14 +229,7 @@ void main() {
         p.life = 1.0;
     }
     
-    if (p.position.y < -2.0 || p.position.y > 2.0) {
-        p.velocity.y *= -0.5;
-        p.position.y = clamp(p.position.y, -2.0, 2.0);
-    }
-    if (p.position.z < -2.0 || p.position.z > 2.0) {
-        p.velocity.z *= -0.5;
-        p.position.z = clamp(p.position.z, -2.0, 2.0);
-    }
+
     
     particles[idx] = p;
 }

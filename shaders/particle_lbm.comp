@@ -253,7 +253,8 @@ void main() {
     p.life -= 0.01 * dt;
     
     // Reset particles that exit domain or expire
-    if (p.life <= 0.0 || p.position.x > 4.0) {
+    // Reset particles that exit domain or expire
+    if (p.life <= 0.0 || p.position.x > 4.0 || abs(p.position.y) > 2.0 || abs(p.position.z) > 2.0) {
         p.position = vec3(-4.0, 
                          (fract(sin(float(idx) * 43758.5453)) - 0.5) * 3.0, 
                          (fract(sin(float(idx) * 12345.6789)) - 0.5) * 3.0);
@@ -262,14 +263,7 @@ void main() {
     }
     
     // Domain bounds
-    if (p.position.y < -2.0 || p.position.y > 2.0) {
-        p.velocity.y *= -0.5;
-        p.position.y = clamp(p.position.y, -2.0, 2.0);
-    }
-    if (p.position.z < -2.0 || p.position.z > 2.0) {
-        p.velocity.z *= -0.5;
-        p.position.z = clamp(p.position.z, -2.0, 2.0);
-    }
+
     
     particles[idx] = p;
 }
