@@ -929,7 +929,7 @@ int main(int argc, char* argv[]) {
         }
         
         // Compute and display drag coefficient every 60 frames
-        if (frameCount % 60 == 0 && lbmGrid && useLBM) {
+        if (frameCount % 60 == 0 && lbmGrid && useLBM && currentTime > 2000) {
             float fx, fy, fz;
             LBM_ComputeDragForce(lbmGrid, &fx, &fy, &fz);
             

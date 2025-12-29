@@ -33,6 +33,7 @@ GLuint loadShader(const char* path, GLenum type) {
     glDeleteShader(shader); // Delete the shader object
     return 0;
   }
+  free(source); // Free allocated memory
   return shader;
 }
 
