@@ -933,8 +933,11 @@ int main(int argc, char* argv[]) {
             float fx, fy, fz;
             LBM_ComputeDragForce(lbmGrid, &fx, &fy, &fz);
             
-            // Reference area ~ car frontal area in grid units
-            float refArea = (carBounds.maxY - carBounds.minY) * (carBounds.maxZ - carBounds.minZ);
+            // Reference area ~ car frontal area in lattice units
+            float scaleY = lbmGrid->sizeY / 4.0f;
+            float scaleZ = lbmGrid->sizeZ / 4.0f;
+            float refArea = (carBounds.maxY - carBounds.minY) * scaleY
+                          * (carBounds.maxZ - carBounds.minZ) * scaleZ;
             float Cd = LBM_ComputeDragCoefficient(lbmGrid, windSpeed * 0.05f, refArea);
             
             printf("  Drag Force: (%.4f, %.4f, %.4f), Cd=%.3f\n", fx, fy, fz, Cd);
