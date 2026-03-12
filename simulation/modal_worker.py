@@ -306,7 +306,7 @@ def upload_video(video_path: Path, job_id: str) -> str:
     secrets=[modal.Secret.from_name("aws-secret")],
     timeout=1000,
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def render_endpoint(data: dict) -> dict:
     import requests
     import uuid
