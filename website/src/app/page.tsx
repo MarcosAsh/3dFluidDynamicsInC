@@ -93,7 +93,7 @@ export default function Home() {
       setVideoUrl(null);
       renderStartTime.current = Date.now();
 
-      let body: Record<string, unknown> = { ...params };
+      const body: Record<string, unknown> = { ...params };
 
       if (params.model === 'custom' && objFile) {
         const text = await objFile.text();

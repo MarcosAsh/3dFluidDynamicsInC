@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { JobStatus } from '../app/page';
 
 interface StatusDisplayProps {
@@ -33,21 +33,26 @@ function getPhase(elapsed: number, duration: number): { phase: Phase; progress: 
 }
 
 export default function StatusDisplay({ status, error, duration, renderStartTime }: StatusDisplayProps) {
-  const [elapsed, setElapsed] = useState(0);
+  const [tick, setTick] = useState(0);
+
+  const isRendering = status === 'rendering' && renderStartTime != null;
 
   useEffect(() => {
-    if (status !== 'rendering' || !renderStartTime) {
-      setElapsed(0);
-      return;
-    }
+    if (!isRendering) return;
 
-    const tick = () => setElapsed((Date.now() - renderStartTime) / 1000);
-    tick();
-    const id = setInterval(tick, 500);
+    const id = setInterval(() => setTick((t) => t + 1), 500);
     return () => clearInterval(id);
-  }, [status, renderStartTime]);
+  }, [isRendering]);
 
-  const isRendering = status === 'rendering';
+  // Reset tick when renderStartTime changes (new render starts)
+  const startRef = useMemo(() => ({ value: renderStartTime }), [renderStartTime]);
+  void startRef;
+
+  // elapsed is derived: 0 when not rendering, computed from tick counter otherwise
+  const elapsed = isRendering && renderStartTime
+    ? tick * 0.5
+    : 0;
+
   const { phase, progress } = getPhase(elapsed, duration);
 
   const statusConfig = {
