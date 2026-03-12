@@ -1,0 +1,213 @@
+'use client';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import ControlPanel from '../components/ControlPanel';
+import VideoPlayer from '../components/VideoPlayer';
+import StatusDisplay from '../components/StatusDisplay';
+import AboutSection from '../components/AboutSection';
+import ResultsPanel, { SimulationResult } from '../components/ResultsPanel';
+
+export type JobStatus = 'idle' | 'starting' | 'rendering' | 'complete' | 'error';
+
+export interface SimulationParams {
+  windSpeed: number;
+  vizMode: number;
+  duration: number;
+  collisionMode: number;
+  model: string;
+}
+
+const VALID_MODELS = new Set(['car', 'ahmed25', 'ahmed35', 'custom']);
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function parseHash(): Partial<SimulationParams> {
+  if (typeof window === 'undefined') return {};
+  const hash = window.location.hash.slice(1);
+  if (!hash) return {};
+  const p = new URLSearchParams(hash);
+  const result: Partial<SimulationParams> = {};
+  if (p.has('ws')) result.windSpeed = clamp(parseFloat(p.get('ws')!), 0, 5);
+  if (p.has('vm')) result.vizMode = clamp(parseInt(p.get('vm')!), 0, 6);
+  if (p.has('cm')) result.collisionMode = clamp(parseInt(p.get('cm')!), 0, 2);
+  if (p.has('d')) result.duration = clamp(parseInt(p.get('d')!), 5, 30);
+  if (p.has('m') && VALID_MODELS.has(p.get('m')!)) result.model = p.get('m')!;
+  return result;
+}
+
+function writeHash(params: SimulationParams) {
+  const hash = `ws=${params.windSpeed}&vm=${params.vizMode}&cm=${params.collisionMode}&d=${params.duration}&m=${params.model}`;
+  window.history.replaceState(null, '', `#${hash}`);
+}
+
+export default function Home() {
+  const [params, setParams] = useState<SimulationParams>(() => {
+    const defaults: SimulationParams = {
+      windSpeed: 1.0,
+      vizMode: 1,
+      duration: 10,
+      collisionMode: 1,
+      model: 'car',
+    };
+    return { ...defaults, ...parseHash() };
+  });
+
+  const [status, setStatus] = useState<JobStatus>('idle');
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<SimulationResult[]>([]);
+  const [backendAvailable, setBackendAvailable] = useState(true);
+  const [objFile, setObjFile] = useState<File | null>(null);
+  const renderStartTime = useRef<number | null>(null);
+
+  useEffect(() => {
+    fetch('/api/render')
+      .then((r) => r.json())
+      .then((data) => setBackendAvailable(data.available))
+      .catch(() => setBackendAvailable(false));
+  }, []);
+
+  // Write hash on param change
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      return;
+    }
+    writeHash(params);
+  }, [params]);
+
+  const currentResult = results.length > 0 ? results[results.length - 1] : null;
+
+  const startRender = useCallback(async () => {
+    if (params.model === 'custom' && !objFile) {
+      setError('Please select an OBJ file first');
+      return;
+    }
+
+    try {
+      setStatus('rendering');
+      setError(null);
+      setVideoUrl(null);
+      renderStartTime.current = Date.now();
+
+      let body: Record<string, unknown> = { ...params };
+
+      if (params.model === 'custom' && objFile) {
+        const text = await objFile.text();
+        const b64 = btoa(text);
+        body.objData = b64;
+      }
+
+      const response = await fetch('/api/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'complete' && data.video_url) {
+        setVideoUrl(data.video_url);
+        setStatus('complete');
+
+        const result: SimulationResult = {
+          videoUrl: data.video_url,
+          cdValue: data.cd_value ?? null,
+          model: params.model,
+          windSpeed: params.windSpeed,
+          timestamp: Date.now(),
+        };
+        setResults((prev) => [...prev, result]);
+      } else if (data.status === 'error') {
+        setError(data.error || 'Render failed');
+        setStatus('error');
+      } else {
+        setError('Unexpected response');
+        setStatus('error');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setStatus('error');
+    } finally {
+      renderStartTime.current = null;
+    }
+  }, [params, objFile]);
+
+  const selectResult = useCallback((result: SimulationResult) => {
+    setVideoUrl(result.videoUrl);
+    setStatus('complete');
+  }, []);
+
+  return (
+    <main className="min-h-screen p-4 md:p-6 lg:p-10 max-w-7xl mx-auto">
+      <div className="mb-4 lg:mb-8 flex items-center gap-3 lg:gap-4">
+        <img src="/logo.png" alt="Lattice" className="h-12 lg:h-16" />
+        <p className="text-xs lg:text-sm text-ctp-subtext0">
+          GPU-accelerated wind tunnel simulation
+          {' '}
+          <a
+            href="https://github.com/MarcosAsh/3dFluidDynamicsInC"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-ctp-blue hover:text-ctp-lavender transition-colors"
+          >
+            (GitHub)
+          </a>
+        </p>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-ctp-surface0 border border-ctp-red/30 rounded text-ctp-red text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="w-full lg:w-60 shrink-0 space-y-4">
+          <ControlPanel
+            params={params}
+            setParams={setParams}
+            onRender={startRender}
+            disabled={!backendAvailable || status === 'rendering'}
+            objFile={objFile}
+            onObjFileChange={setObjFile}
+          />
+          <StatusDisplay
+            status={status}
+            error={error}
+            duration={params.duration}
+            renderStartTime={renderStartTime.current}
+          />
+          <ResultsPanel
+            current={currentResult}
+            history={results}
+            onSelect={selectResult}
+          />
+          <AboutSection />
+        </div>
+        <div className="flex-1 flex flex-col gap-4">
+          <VideoPlayer videoUrl={videoUrl} status={status} backendAvailable={backendAvailable} />
+          <Link
+            href="/docs"
+            className="border border-ctp-surface1 rounded-lg p-4 bg-ctp-mantle flex items-center justify-between hover:border-ctp-mauve transition-colors"
+          >
+            <div>
+              <h2 className="text-xs font-semibold text-ctp-overlay1 uppercase tracking-wider mb-1">
+                White Paper
+              </h2>
+              <p className="text-xs text-ctp-overlay0">
+                LBM theory, compute shader implementation, and drag coefficient validation
+              </p>
+            </div>
+            <svg className="w-4 h-4 text-ctp-overlay1 shrink-0 ml-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}

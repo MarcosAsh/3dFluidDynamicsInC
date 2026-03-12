@@ -1,0 +1,104 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(std430, binding = 2) buffer LBMBuffer {
+    float f[];
+};
+
+layout(std430, binding = 5) buffer SolidMask {
+    int solid[];
+};
+
+layout(std430, binding = 6) buffer ForceBuffer {
+    int forceXInt;
+    int forceYInt;
+    int forceZInt;
+    int solidCount;
+};
+
+uniform ivec3 gridSize;
+
+const ivec3 e[19] = ivec3[19](
+    ivec3( 0,  0,  0),
+    ivec3( 1,  0,  0),
+    ivec3(-1,  0,  0),
+    ivec3( 0,  1,  0),
+    ivec3( 0, -1,  0),
+    ivec3( 0,  0,  1),
+    ivec3( 0,  0, -1),
+    ivec3( 1,  1,  0),
+    ivec3(-1,  1,  0),
+    ivec3( 1, -1,  0),
+    ivec3(-1, -1,  0),
+    ivec3( 1,  0,  1),
+    ivec3(-1,  0,  1),
+    ivec3( 1,  0, -1),
+    ivec3(-1,  0, -1),
+    ivec3( 0,  1,  1),
+    ivec3( 0, -1,  1),
+    ivec3( 0,  1, -1),
+    ivec3( 0, -1, -1)
+);
+
+const int opposite[19] = int[19](
+    0, 2, 1, 4, 3, 6, 5,
+    10, 9, 8, 7,
+    14, 13, 12, 11,
+    18, 17, 16, 15
+);
+
+int idx3D(int x, int y, int z) {
+    return x + y * gridSize.x + z * gridSize.x * gridSize.y;
+}
+
+int idxF(int x, int y, int z, int i) {
+    return i + 19 * idx3D(x, y, z);
+}
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID.xyz);
+    
+    if (pos.x >= gridSize.x || pos.y >= gridSize.y || pos.z >= gridSize.z) return;
+    
+    int cellIdx = idx3D(pos.x, pos.y, pos.z);
+    
+    // Only process fluid cells adjacent to solid
+    if (solid[cellIdx] != 0) return;
+    
+    vec3 localForce = vec3(0.0);
+    bool hasSolidNeighbor = false;
+    
+    for (int i = 1; i < 19; i++) {
+        ivec3 neighbor = pos + e[i];
+        
+        if (neighbor.x < 0 || neighbor.x >= gridSize.x ||
+            neighbor.y < 0 || neighbor.y >= gridSize.y ||
+            neighbor.z < 0 || neighbor.z >= gridSize.z) continue;
+        
+        int neighborIdx = idx3D(neighbor.x, neighbor.y, neighbor.z);
+        
+        // If neighbor is solid, compute momentum exchange
+        if (solid[neighborIdx] == 1) {
+            hasSolidNeighbor = true;
+            
+            // Momentum exchange: F = 2 * f_i * e_i
+            // f_i is the distribution going INTO the solid
+            // After bounce-back, momentum change is 2 * f_i * e_i
+            float fi = f[idxF(pos.x, pos.y, pos.z, i)];
+            float fi_opp = f[idxF(pos.x, pos.y, pos.z, opposite[i])];
+            
+            // Force on fluid from solid (reaction force on solid is opposite)
+            localForce.x += 2.0 * (fi + fi_opp) * float(e[i].x);
+            localForce.y += 2.0 * (fi + fi_opp) * float(e[i].y);
+            localForce.z += 2.0 * (fi + fi_opp) * float(e[i].z);
+        }
+    }
+    
+    if (hasSolidNeighbor) {
+        // Use atomicAdd with integer scaling (multiply by 10000 for precision)
+        atomicAdd(forceXInt, int(localForce.x * 10000.0));
+        atomicAdd(forceYInt, int(localForce.y * 10000.0));
+        atomicAdd(forceZInt, int(localForce.z * 10000.0));
+        atomicAdd(solidCount, 1);
+    }
+}
